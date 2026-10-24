@@ -2,7 +2,7 @@
   "name": "vscode-favorites",
   "displayName": "favorites",
   "description": "Mark resources (files or folders, local and remote) as favorites, so they can be easily accessed.",
-  "version": "1.15.1",
+  "version": "1.15.2",
   "publisher": "howardzuo",
   "engines": {
     "vscode": "^1.80.0"
@@ -14,10 +14,11 @@
     "compile": "npm run check-types && node esbuild.js",
     "check-types": "tsc --noEmit",
     "build": "npm run package",
-    "package": "node esbuild.js --production && npx vsce package",
+    "package": "node scripts/package.cjs",
     "pub": "vsce publish",
     "clean": "rimraf out dist *.vsix",
-    "test": "node --experimental-specifier-resolution=node --experimental-vm-modules node_modules/vscode-test/out/runTest.js --extensionDevelopmentPath=. --testPathPattern=src/test"
+    "test": "node --experimental-specifier-resolution=node --experimental-vm-modules node_modules/vscode-test/out/runTest.js --extensionDevelopmentPath=. --testPathPattern=src/test",
+    "test:batch": "node --test test/batch.test.cjs"
   },
   "categories": [
     "Other"
@@ -157,22 +158,22 @@
       "view/item/context": [
         {
           "command": "favorites.revealInOS.mac",
-          "when": "isMac && view in ext:allFavoriteViews && viewItem =~ /^resource/",
+          "when": "isMac && view in ext:allFavoriteViews && viewItem =~ /^resource/ && !listMultiSelection",
           "group": "navigation"
         },
         {
           "command": "favorites.revealInOS.windows",
-          "when": "isWindows && view in ext:allFavoriteViews && viewItem =~ /^resource/",
+          "when": "isWindows && view in ext:allFavoriteViews && viewItem =~ /^resource/ && !listMultiSelection",
           "group": "navigation"
         },
         {
           "command": "favorites.revealInOS.other",
-          "when": "!isMac && !isWindows && view in ext:allFavoriteViews && viewItem =~ /^resource/",
+          "when": "!isMac && !isWindows && view in ext:allFavoriteViews && viewItem =~ /^resource/ && !listMultiSelection",
           "group": "navigation"
         },
         {
           "command": "favorites.revealInSideBar",
-          "when": "view in ext:allFavoriteViews",
+          "when": "view in ext:allFavoriteViews && !listMultiSelection",
           "group": "navigation"
         },
         {
@@ -204,6 +205,16 @@
           "command": "favorites.moveToBottom",
           "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/",
           "group": "sort@4"
+        },
+        {
+          "command": "favorites.stage",
+          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?$/",
+          "group": "git"
+        },
+        {
+          "command": "favorites.forceStage",
+          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?$/",
+          "group": "git"
         }
       ],
       "commandPalette": [
@@ -249,6 +260,14 @@
         },
         {
           "command": "favorites.moveToBottom",
+          "when": "false"
+        },
+        {
+          "command": "favorites.stage",
+          "when": "false"
+        },
+        {
+          "command": "favorites.forceStage",
           "when": "false"
         }
       ]
@@ -338,6 +357,14 @@
       {
         "command": "favorites.addToFavoritesGroup",
         "title": "%command.favorites.addtofavorites%"
+      },
+      {
+        "command": "favorites.stage",
+        "title": "%command.favorites.stage%"
+      },
+      {
+        "command": "favorites.forceStage",
+        "title": "%command.favorites.forceStage%"
       }
     ]
   },
@@ -355,5 +382,8 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.0.0",
     "vscode-test": "^1.6.1"
-  }
+  },
+  "extensionKind": [
+    "workspace"
+  ]
 }

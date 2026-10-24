@@ -16,5 +16,7 @@
   "command.favorites.newGroup": "Create New Group",
   "command.favorites.toggleFavorite": "Toggle Favorite",
   "command.favorites.toggleFolderOfActiveFile": "Toggle Folder of Active File",
-  "view.favorites.title": "Favorites"
+  "view.favorites.title": "Favorites",
+  "command.favorites.stage": "Stage Changes",
+  "command.favorites.forceStage": "Force Stage Changes (Include Ignored Files)"
 }

@@ -23,6 +23,22 @@ ext install howardzuo.vscode-favorites
 
 An **Add to Favorites** command in Explorer's context menu saves links to your favorite files or folders into your _*`XYZ`*_`.code-workspace` file if you are using one, else into the `.vscode/settings.json` file of your root folder.
 
+### Multiple Selection and Git Staging
+
+Both Favorites views support **Shift+click** for a range and **Ctrl+click** (**Cmd+click** on macOS) for individual selections.
+Right-click the selection to remove favorites or open all selected files to the side. Explorer's **Add to Favorites** and group commands also accept multiple files or folders.
+Removing favorites only removes their shortcuts; folder contents are not individual favorites and cannot be removed this way.
+
+For files in an open Git repository, the Favorites context menu offers:
+
+- **Stage Changes**: stage the selected files while respecting Git ignore rules.
+- **Force Stage Changes (Include Ignored Files)**: stage the selected files even if Git ignores them.
+
+Staging uses the saved file contents, reports per-file failures, and does not commit or push. Only selected files are processed; folders and virtual resources are rejected before staging starts.
+Once an ignored file is staged and committed, Git tracks it and ignore rules no longer hide its changes.
+
+**Move Up**, **Move Down**, **Move to Top**, and **Move to Bottom** require a single selection. Multiple selections show a message without changing the order.
+
 ### Toggle Favorite for Active File
 
 Use the **Toggle Favorite** command from the Command Palette (`cmd`/`ctrl` + `shift` + `p`) to quickly add or remove the currently active file from your favorites.
@@ -101,6 +117,14 @@ Your favorites are listed in a separate view and can be quickly accessed from th
 
    ```bash
    pnpm run build
+   ```
+
+   This checks TypeScript, builds the production bundle, and packages `releases/vscode-favorites-<version>.vsix` in one command. `npm run build` and `npm run package` are equivalent. Install dependencies before the first build; the output VSIX is committed for direct installation via **Extensions: Install from VSIX...**.
+
+   Run the batch-command checks (including real temporary Git repositories) with:
+
+   ```bash
+   npm run test:batch
    ```
 
 2. **Run tests**:

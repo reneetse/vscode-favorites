@@ -58,6 +58,40 @@ export async function getCurrentResources(): Promise<Array<ItemInSettingsJson>> 
   return newResources
 }
 
+export function resourcePathToUri(filePath: string): vscode.Uri {
+  return !path.isAbsolute(filePath) && /^[A-Za-z][A-Za-z0-9+-.]*:/.test(filePath)
+    ? vscode.Uri.parse(filePath)
+    : vscode.Uri.file(resolveResourcePath(filePath))
+}
+
+export async function addFavoriteUris(uris: readonly vscode.Uri[], group: string): Promise<number> {
+  const resources = await getCurrentResources()
+  const existing = new Set(resources.filter((item) => item.group === group).map((item) => resourcePathToUri(item.filePath).toString()))
+  const rootPath = getSingleRootPath()
+  let added = 0
+
+  for (const uri of uris) {
+    if (existing.has(uri.toString())) {
+      continue
+    }
+    let filePath = uri.scheme === 'file' ? uri.fsPath : uri.toString()
+    if (uri.scheme === 'file' && rootPath && !isMultiRoots()) {
+      const relative = path.relative(rootPath, uri.fsPath)
+      if (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)) {
+        filePath = relative
+      }
+    }
+    resources.push({ filePath, group })
+    existing.add(uri.toString())
+    added++
+  }
+
+  if (added) {
+    await configMgr.save('resources', resources)
+  }
+  return added
+}
+
 export function replaceArrayElements<T>(array: Array<T>, targetId: number, sourceId: number): Array<T> {
   return array.reduce(
     (resultArray: T[], element, id, originalArray) => [

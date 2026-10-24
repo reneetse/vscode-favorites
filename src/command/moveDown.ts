@@ -3,9 +3,11 @@ import * as vscode from 'vscode'
 import { Resource, FavoritesProvider } from '../provider/FavoritesProvider'
 import configMgr from '../helper/configMgr'
 import { getCurrentResources, replaceArrayElements } from '../helper/util'
+import { rejectBatchMove } from '../helper/selection'
 
 export function moveDown(favoritesProvider: FavoritesProvider) {
-  return vscode.commands.registerCommand('favorites.moveDown', async function (value: Resource) {
+  return vscode.commands.registerCommand('favorites.moveDown', async function (value: Resource, selected?: readonly Resource[]) {
+    if (rejectBatchMove(value, selected)) return
     try {
       const config = vscode.workspace.getConfiguration('favorites')
       const currentGroup = await configMgr.get('currentGroup') as string

@@ -10,6 +10,7 @@ pnpm-lock.yaml
 
 # VSIX packages
 vscode-favorites-*.vsix
+!releases/vscode-favorites-*.vsix
 
 # Build output
 dist/

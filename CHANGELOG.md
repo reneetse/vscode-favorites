@@ -1,5 +1,12 @@
 <!--Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.-->
 
+### 2026-10-24 (1.15.2)
+
+1. Enable native multi-selection in both Favorites views and batch add, remove, group, and open actions.
+2. Add normal and force Git staging for selected files, including folder children and files from multiple repositories.
+3. Reject multi-selection for movement commands with a message.
+4. Add batch-command checks and one-command compilation and VSIX packaging to `releases/`.
+
 ### 2026-03-24 (1.15.1)
 
 1. Add group selection when adding to favorites (right-click context menu)

@@ -26,6 +26,7 @@ import {
   revealInSideBar,
   openToSide,
   open,
+  stage,
 } from './command'
 
 // this method is called when your extension is activated
@@ -49,11 +50,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   vscode.window.createTreeView('favorites', {
     treeDataProvider: favoritesProvider,
+    canSelectMany: true,
     showCollapseAll: true,
     dragAndDropController: favoritesProvider,
   })
   const tree = vscode.window.createTreeView('favorites-full-view', {
     treeDataProvider: favoritesProvider,
+    canSelectMany: true,
     showCollapseAll: true,
     dragAndDropController: favoritesProvider,
   })
@@ -148,6 +151,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(revealInOS_other())
   context.subscriptions.push(revealInSideBar())
   context.subscriptions.push(openToSide())
+  context.subscriptions.push(stage())
+  context.subscriptions.push(stage(true))
   context.subscriptions.push(open(favoritesProvider))
   context.subscriptions.push(moveUp(favoritesProvider))
   context.subscriptions.push(moveDown(favoritesProvider))
