@@ -21,6 +21,7 @@ class Uri {
   constructor(value) {
     this.url = new URL(value)
     this.scheme = this.url.protocol.slice(0, -1)
+    this.path = decodeURIComponent(this.url.pathname)
     this.fsPath = this.scheme === 'file' ? fileURLToPath(this.url) : decodeURIComponent(this.url.pathname)
   }
   static file(value) {
@@ -73,6 +74,7 @@ async function fixture(t) {
   const messages = []
   const writes = []
   const opened = []
+  const copied = []
   const failures = []
   const api = {
     git: { path: 'git' },
@@ -102,6 +104,7 @@ async function fixture(t) {
     TreeItemCollapsibleState: { None: 0, Collapsed: 1 },
     FileType: { File: 1, Directory: 2 },
     ViewColumn: { Beside: -2 },
+    env: { clipboard: { writeText: async (text) => copied.push(text) } },
     workspace: {
       workspaceFolders: [{ uri: Uri.file(root) }],
       getConfiguration: (section) => ({
@@ -195,6 +198,7 @@ async function fixture(t) {
     writes,
     messages,
     opened,
+    copied,
     vscode,
     repository,
     file,
@@ -211,6 +215,62 @@ test('both Favorites views enable native multi-selection', async (t) => {
   const f = await fixture(t)
   assert.equal(f.views.size, 2)
   for (const view of f.views.values()) assert.equal(view.canSelectMany, true)
+})
+
+test('copy filename uses the URI name including its extension instead of the display label', async (t) => {
+  const f = await fixture(t)
+  const target = { ...f.item(f.file('docs/中文 待办.md')), label: 'docs/中文 待办.md' }
+  await f.run('favorites.copyFileName', target)
+  assert.deepEqual(f.copied, ['中文 待办.md'])
+})
+
+test('copy path uses absolute paths for files and folder children', async (t) => {
+  const f = await fixture(t)
+  const uri = f.file('docs/中文 待办.md')
+  await f.run('favorites.copyFilePath', f.item(uri, true))
+  assert.deepEqual(f.copied, [uri.fsPath])
+})
+
+test('copy commands support folders and deduplicate multiple selections in order', async (t) => {
+  const f = await fixture(t)
+  const uri = f.file('docs/a.md')
+  const file = f.item(uri, true)
+  const folder = { ...f.item(Uri.file(path.dirname(uri.fsPath))), contextValue: 'uri.resource.dir' }
+  await f.run('favorites.copyFileName', folder, [file, folder, file])
+  await f.run('favorites.copyFilePath', folder, [file, folder, file])
+  assert.deepEqual(f.copied, [
+    ['a.md', 'docs'].join(os.EOL),
+    [uri.fsPath, path.dirname(uri.fsPath)].join(os.EOL),
+  ])
+})
+
+test('copy commands handle remote filesystem paths and preserve web URIs', async (t) => {
+  const f = await fixture(t)
+  const remote = Uri.parse('vscode-remote://ssh-remote+dev/home/user/中文%20待办.md')
+  const web = Uri.parse('https://example.com/docs/note%20one.md?version=2#section')
+  const selected = [f.item(remote), f.item(web)]
+  await f.run('favorites.copyFileName', selected[0], selected)
+  await f.run('favorites.copyFilePath', selected[0], selected)
+  assert.deepEqual(f.copied, [
+    ['中文 待办.md', 'note one.md'].join(os.EOL),
+    [remote.fsPath, web.toString()].join(os.EOL),
+  ])
+})
+
+test('copying an unselected target ignores the previous selection', async (t) => {
+  const f = await fixture(t)
+  const target = f.item(f.file('target.md'))
+  await f.run('favorites.copyFileName', target, [f.item(f.file('other.md'))])
+  assert.deepEqual(f.copied, ['target.md'])
+})
+
+test('copy commands warn on an empty target without overwriting the clipboard', async (t) => {
+  const f = await fixture(t)
+  await f.run('favorites.copyFileName')
+  await f.run('favorites.copyFilePath')
+  assert.deepEqual(f.copied, [])
+  assert.equal(f.messages.length, 2)
+  assert.ok(f.messages.every(([kind, message]) => kind === 'warning' && /choose a resource/.test(message)))
 })
 
 test('Explorer batch add deduplicates and saves resources once', async (t) => {

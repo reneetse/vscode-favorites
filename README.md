@@ -39,6 +39,13 @@ Once an ignored file is staged and committed, Git tracks it and ignore rules no 
 
 **Move Up**, **Move Down**, **Move to Top**, and **Move to Bottom** require a single selection. Multiple selections show a message without changing the order.
 
+### Copy File Name and Path
+
+Right-click files or folders in either Favorites view and choose **Copy File Name** (including the extension) or **Copy File Path** (absolute path).
+Both commands also work on folder children and multiple selections, copying one entry per line. Remote files use their filesystem paths; other URI resources keep the full URI when copying paths.
+
+**Copy Relative Path** copies the path relative to the resource's workspace folder, without a workspace folder prefix even in multi-root workspaces. Files outside the workspace (or when no folder is open) use their absolute paths; other URI resources keep the full URI. Folder children and multiple selections are supported.
+
 ### Toggle Favorite for Active File
 
 Use the **Toggle Favorite** command from the Command Palette (`cmd`/`ctrl` + `shift` + `p`) to quickly add or remove the currently active file from your favorites.

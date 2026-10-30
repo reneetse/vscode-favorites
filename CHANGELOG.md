@@ -1,5 +1,13 @@
 <!--Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.-->
 
+### 2026-10-30 (1.15.4)
+
+1. Add Copy Relative Path to both Favorites context menus, relative to each resource's workspace folder, with absolute-path fallback for external files.
+
+### 2026-10-30 (1.15.3)
+
+1. Add Copy File Name and Copy File Path to both Favorites context menus, supporting files, folders, folder children, and multiple selections.
+
 ### 2026-10-24 (1.15.2)
 
 1. Enable native multi-selection in both Favorites views and batch add, remove, group, and open actions.

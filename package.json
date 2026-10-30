@@ -2,7 +2,7 @@
   "name": "vscode-favorites",
   "displayName": "favorites",
   "description": "Mark resources (files or folders, local and remote) as favorites, so they can be easily accessed.",
-  "version": "1.15.2",
+  "version": "1.15.4",
   "publisher": "howardzuo",
   "engines": {
     "vscode": "^1.80.0"
@@ -187,6 +187,21 @@
           "group": "operation"
         },
         {
+          "command": "favorites.copyFileName",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/",
+          "group": "copy@1"
+        },
+        {
+          "command": "favorites.copyFilePath",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/",
+          "group": "copy@2"
+        },
+        {
+          "command": "favorites.copyRelativePath",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/",
+          "group": "copy@3"
+        },
+        {
           "command": "favorites.moveToTop",
           "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/",
           "group": "sort@1"
@@ -244,6 +259,18 @@
         },
         {
           "command": "favorites.openToSide",
+          "when": "false"
+        },
+        {
+          "command": "favorites.copyFileName",
+          "when": "false"
+        },
+        {
+          "command": "favorites.copyFilePath",
+          "when": "false"
+        },
+        {
+          "command": "favorites.copyRelativePath",
           "when": "false"
         },
         {
@@ -345,6 +372,18 @@
       {
         "command": "favorites.openToSide",
         "title": "%command.favorites.openToSide%"
+      },
+      {
+        "command": "favorites.copyFileName",
+        "title": "%command.favorites.copyFileName%"
+      },
+      {
+        "command": "favorites.copyFilePath",
+        "title": "%command.favorites.copyFilePath%"
+      },
+      {
+        "command": "favorites.copyRelativePath",
+        "title": "%command.favorites.copyRelativePath%"
       },
       {
         "command": "favorites.toggleFavorite",

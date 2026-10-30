@@ -25,6 +25,9 @@ import {
   revealInOS_other,
   revealInSideBar,
   openToSide,
+  copyFileName,
+  copyFilePath,
+  copyRelativePath,
   open,
   stage,
 } from './command'
@@ -151,6 +154,9 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(revealInOS_other())
   context.subscriptions.push(revealInSideBar())
   context.subscriptions.push(openToSide())
+  context.subscriptions.push(copyFileName())
+  context.subscriptions.push(copyFilePath())
+  context.subscriptions.push(copyRelativePath())
   context.subscriptions.push(stage())
   context.subscriptions.push(stage(true))
   context.subscriptions.push(open(favoritesProvider))
