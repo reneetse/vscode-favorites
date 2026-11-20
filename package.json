@@ -2,7 +2,7 @@
   "name": "vscode-favorites",
   "displayName": "favorites",
   "description": "Mark resources (files or folders, local and remote) as favorites, so they can be easily accessed.",
-  "version": "1.16.0",
+  "version": "1.17.0",
   "publisher": "howardzuo",
   "engines": {
     "vscode": "^1.80.0"
@@ -62,7 +62,7 @@
             "FILETYPE",
             "MANUAL"
           ],
-          "default": "ASC",
+          "default": "MTIME_DESC",
           "description": "%configuration.sortOrder.description%",
           "enumDescriptions": [
             "%sort.ASC%",
@@ -104,6 +104,18 @@
             "始终使用英文 / Always use English",
             "跟随 VS Code / Follow VS Code"
           ]
+        },
+        "favorites.refreshInterval": {
+          "type": "integer",
+          "default": 30,
+          "minimum": 0,
+          "maximum": 3600,
+          "description": "%configuration.refreshInterval.description%"
+        },
+        "favorites.autoReveal": {
+          "type": "boolean",
+          "default": true,
+          "description": "%configuration.autoReveal.description%"
         }
       }
     },
@@ -271,52 +283,52 @@
         },
         {
           "command": "favorites.openToSide",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^resource(Child)?$|^uri\\.resource(Child)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
           "group": "navigation"
         },
         {
           "command": "favorites.localized.en.openToSide",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^resource(Child)?$|^uri\\.resource(Child)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "navigation"
         },
         {
           "command": "favorites.deleteFavorite",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /(^|\\.)resource(\\.dir)?$|resourceChild\\.pinned(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
           "group": "operation"
         },
         {
           "command": "favorites.localized.en.deleteFavorite",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /(^|\\.)resource(\\.dir)?$|resourceChild\\.pinned(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "operation"
         },
         {
           "command": "favorites.copyFileName",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
           "group": "copy@1"
         },
         {
           "command": "favorites.localized.en.copyFileName",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "copy@1"
         },
         {
           "command": "favorites.copyFilePath",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
           "group": "copy@2"
         },
         {
           "command": "favorites.localized.en.copyFilePath",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "copy@2"
         },
         {
           "command": "favorites.copyRelativePath",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
           "group": "copy@3"
         },
         {
           "command": "favorites.localized.en.copyRelativePath",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "copy@3"
         },
         {
@@ -361,43 +373,63 @@
         },
         {
           "command": "favorites.stage",
-          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
           "group": "git"
         },
         {
           "command": "favorites.localized.en.stage",
-          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "git"
         },
         {
           "command": "favorites.forceStage",
-          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
           "group": "git"
         },
         {
           "command": "favorites.localized.en.forceStage",
-          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "git"
         },
         {
           "command": "favorites.newFolder",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && !listMultiSelection && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?(\\.dir)?$/ && !listMultiSelection && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
           "group": "file@1"
         },
         {
           "command": "favorites.localized.en.newFolder",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && !listMultiSelection && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?(\\.dir)?$/ && !listMultiSelection && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "file@1"
         },
         {
           "command": "favorites.moveToFolder",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
           "group": "file@2"
         },
         {
           "command": "favorites.localized.en.moveToFolder",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "file@2"
+        },
+        {
+          "command": "favorites.moveToParentFolder",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "file@3"
+        },
+        {
+          "command": "favorites.localized.en.moveToParentFolder",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
+          "group": "file@3"
+        },
+        {
+          "command": "favorites.deleteFiles",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "file@9"
+        },
+        {
+          "command": "favorites.localized.en.deleteFiles",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.pinned)?(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
+          "group": "file@9"
         }
       ],
       "commandPalette": [
@@ -599,6 +631,30 @@
         },
         {
           "command": "favorites.localized.en.addToFavoritesGroup",
+          "when": "(config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.moveToParentFolder",
+          "when": "false"
+        },
+        {
+          "command": "favorites.localized.en.moveToParentFolder",
+          "when": "false"
+        },
+        {
+          "command": "favorites.deleteFiles",
+          "when": "false"
+        },
+        {
+          "command": "favorites.localized.en.deleteFiles",
+          "when": "false"
+        },
+        {
+          "command": "favorites.showDiagnostics",
+          "when": "(config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.localized.en.showDiagnostics",
           "when": "(config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))"
         }
       ]
@@ -829,6 +885,30 @@
       {
         "command": "favorites.localized.en.moveToFolder",
         "title": "Move to Folder..."
+      },
+      {
+        "command": "favorites.moveToParentFolder",
+        "title": "%command.favorites.moveToParentFolder%"
+      },
+      {
+        "command": "favorites.localized.en.moveToParentFolder",
+        "title": "Move to Parent Folder"
+      },
+      {
+        "command": "favorites.deleteFiles",
+        "title": "%command.favorites.deleteFiles%"
+      },
+      {
+        "command": "favorites.localized.en.deleteFiles",
+        "title": "Delete Files / Folders..."
+      },
+      {
+        "command": "favorites.showDiagnostics",
+        "title": "%command.favorites.showDiagnostics%"
+      },
+      {
+        "command": "favorites.localized.en.showDiagnostics",
+        "title": "Favorites: Show Diagnostics"
       }
     ]
   },

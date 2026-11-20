@@ -3,10 +3,11 @@ import * as path from 'path'
 
 import { getCurrentResources, isMultiRoots } from '../helper/util'
 import configMgr from '../helper/configMgr'
-import { resourcePathToUri, serializeFavoriteUri, uriKey } from '../helper/resourcePaths'
-import { moveResources } from '../helper/fileOperations'
+import { resourcePathToUri, serializeFavoriteUri, uriKey, isEqualOrParent } from '../helper/resourcePaths'
+import { moveResources, moveOutcomeMessage } from '../helper/fileOperations'
 import { t, getLanguage } from '../helper/i18n'
 import { getSortOrder } from '../helper/sortOrder'
+import type { FileActivity } from '../helper/fileActivity'
 import { DEFAULT_GROUP, FileStat } from '../enum'
 import { Item, ItemInSettingsJson } from '../model'
 
@@ -17,6 +18,8 @@ export class FavoritesProvider
 {
   private _onDidChangeTreeData = new vscode.EventEmitter<Resource | void>()
   readonly onDidChangeTreeData: vscode.Event<Resource | void> = this._onDidChangeTreeData.event
+  private parents = new Map<string, Resource | undefined>()
+  private epoch = 0
 
   // Use for detecting doubleclick
   public lastOpened: { uri: vscode.Uri; date: Date } | undefined
@@ -25,7 +28,7 @@ export class FavoritesProvider
   readonly dragMimeTypes = [FAVORITES_MIME]
   readonly dropMimeTypes = [FAVORITES_MIME, 'application/vnd.code.tree.uri', 'text/uri-list', 'text/plain']
 
-  constructor() {
+  constructor(private activity?: FileActivity) {
     // Listen for changes to files.exclude configuration
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration('files.exclude')) {
@@ -35,6 +38,8 @@ export class FavoritesProvider
   }
 
   refresh(element?: Resource): void {
+    this.epoch++
+    this.parents.clear()
     if (element) {
       // Incremental update, only update the specified element
       this._onDidChangeTreeData.fire(element)
@@ -48,13 +53,84 @@ export class FavoritesProvider
     return element
   }
 
+  private async descend(uri: vscode.Uri, root: Resource, cache = new Map<string, Promise<Resource[]>>(), epoch = this.epoch): Promise<Resource | undefined> {
+    if (!isEqualOrParent(uri, root.resourceUri)) return
+    let current = root
+    const segments = uri.path.slice(root.resourceUri.path.replace(/\/+$/, '').length).split('/').filter(Boolean)
+    for (const segment of segments) {
+      if (epoch !== this.epoch) return
+      const key = uriKey(current.resourceUri)
+      let children = cache.get(key)
+      if (!children) {
+        children = this.getChildren(current)
+        cache.set(key, children)
+      }
+      const nextUri = vscode.Uri.joinPath(current.resourceUri, segment)
+      const next = (await children).find((child) => uriKey(child.resourceUri) === uriKey(nextUri))
+      if (epoch !== this.epoch) return
+      if (!next) return
+      current = next
+    }
+    return current
+  }
+
+  async findResource(uri: vscode.Uri): Promise<Resource | undefined> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const epoch = this.epoch
+      const roots = await this.getChildren()
+      if (epoch !== this.epoch) continue
+      const exact = roots.find((root) => uriKey(root.resourceUri) === uriKey(uri))
+      if (exact) return exact
+      const candidates = roots.filter((root) => root.contextValue.endsWith('.dir') && isEqualOrParent(uri, root.resourceUri))
+        .sort((a, b) => b.resourceUri.path.length - a.resourceUri.path.length)
+      const cache = new Map<string, Promise<Resource[]>>()
+      for (const root of candidates) {
+        const resource = await this.descend(uri, root, cache, epoch)
+        if (resource) return resource
+        if (epoch !== this.epoch) break
+      }
+      if (epoch === this.epoch) return
+    }
+  }
+
+  async getParent(element: Resource): Promise<Resource | undefined> {
+    const key = uriKey(element.resourceUri)
+    if (!this.parents.has(key)) await this.findResource(element.resourceUri)
+    return this.parents.get(key)
+  }
+
   async getChildren(element?: Resource): Promise<Resource[]> {
+    const epoch = this.epoch
     const currentGroup = ((await configMgr.get('currentGroup')) as string) || DEFAULT_GROUP
-    if (element) return this.getChildrenResources({ filePath: element.value, group: currentGroup })
+    if (element) {
+      const children = await this.getChildrenResources({ filePath: element.value, group: currentGroup })
+      const pinned = new Set((await getCurrentResources()).filter((item) => item.group === currentGroup)
+        .map((item) => uriKey(resourcePathToUri(item.filePath))))
+      for (const child of children) {
+        if (pinned.has(uriKey(child.resourceUri))) child.contextValue = child.contextValue.replace(/(\.dir)?$/, '.pinned$1')
+        if (epoch === this.epoch) this.parents.set(uriKey(child.resourceUri), element)
+      }
+      return children
+    }
     const resources = (await getCurrentResources()).filter((item) => item.group === currentGroup)
     const sort = await getSortOrder()
     const items = await this.sortResources(resources, sort)
-    return this.data2Resource(items.filter((item) => item.stat !== FileStat.NEITHER), 'resource')
+    const valid = items.filter((item) => item.stat !== FileStat.NEITHER)
+    const unique = [...new Map(valid.map((item) => [uriKey(item.uri!), item])).values()]
+    const roots: Item[] = []
+    const cache = new Map<string, Promise<Resource[]>>()
+    for (const item of unique) {
+      let nested = false
+      for (const parent of unique) {
+        if (parent !== item && parent.stat === FileStat.DIRECTORY && isEqualOrParent(item.uri!, parent.uri!)) {
+          if (await this.descend(item.uri!, this.createResource(parent, 'resource'), cache, epoch)) { nested = true; break }
+        }
+      }
+      if (!nested) roots.push(item)
+    }
+    const result = this.data2Resource(roots, 'resource')
+    if (epoch === this.epoch) for (const root of result) this.parents.set(uriKey(root.resourceUri), undefined)
+    return result
   }
 
   private async getChildrenResources(item: ItemInSettingsJson): Promise<Array<Resource>> {
@@ -338,7 +414,18 @@ export class FavoritesProvider
       }
     }
 
-    return new Resource(label, collapsibleState, item.filePath, finalContextValue, command, uri)
+    const resource = new Resource(label, collapsibleState, item.filePath, finalContextValue, command, uri)
+    if (!isDirectory) {
+      const standalone = !contextValue.includes('resourceChild')
+      const isNew = this.activity?.isNew(uri)
+      const directory = standalone ? path.dirname(vscode.workspace.asRelativePath(uri, false)) : ''
+      resource.description = [isNew ? 'NEW' : '', directory === '.' ? '' : directory].filter(Boolean).join(' · ')
+      if (isNew) {
+        resource.iconPath = new vscode.ThemeIcon('new-file', new vscode.ThemeColor('list.highlightForeground'))
+        resource.tooltip = `${item.filePath}\n${t('New file — not opened yet')}`
+      }
+    }
+    return resource
   }
 
   private data2Resource(data: Array<Item>, contextValue: string): Array<Resource> {
@@ -409,10 +496,11 @@ export class FavoritesProvider
       // Older Explorer versions omit folders from external URI lists. Only our
       // own drag payload has a complete selection suitable for filesystem moves.
       if (resourceData && target?.contextValue.endsWith('.dir')) {
-        const count = await moveResources(sourcePaths.map(resourcePathToUri), target.resourceUri, token)
+        const result = await moveResources(sourcePaths.map(resourcePathToUri), target.resourceUri, token)
         this.refresh()
-        if (!token.isCancellationRequested) {
-          vscode.window.showInformationMessage(count ? t('Moved {0} item(s).', count) : t('The selected items are already in this folder.'))
+        if (!result.cancelled) {
+          if (result.warnings.length) vscode.window.showWarningMessage(moveOutcomeMessage(result))
+          else vscode.window.showInformationMessage(moveOutcomeMessage(result))
         }
         return
       }
@@ -487,6 +575,7 @@ export class Resource extends vscode.TreeItem {
     super(label, collapsibleState)
 
     this.resourceUri = uri ? uri : vscode.Uri.file(value)
+    this.id = uriKey(this.resourceUri)
     this.tooltip = value
   }
 }

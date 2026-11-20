@@ -4,9 +4,12 @@ import * as vscode from 'vscode'
 import { FavoritesProvider } from './provider/FavoritesProvider'
 import { GroupCommandProvider } from './provider/GroupCommandProvider'
 import configMgr from './helper/configMgr'
-import { updateFavoritePaths } from './helper/favoriteRenames'
+import { updateFavoritePaths, onResourcesRenamed, onResourcesDeleted } from './helper/favoriteRenames'
 import { t, getLanguage } from './helper/i18n'
 import { registerLocalizedCommands } from './helper/localizedCommands'
+import { initializeDiagnostics, logOperation } from './helper/diagnostics'
+import { FileActivity } from './helper/fileActivity'
+import { AutoReveal } from './helper/autoReveal'
 
 import {
   addToFavorites,
@@ -34,6 +37,8 @@ import {
   stage,
   newFolder,
   moveToFolder,
+  moveToParentFolder,
+  deleteFiles,
 } from './command'
 
 // this method is called when your extension is activated
@@ -45,7 +50,20 @@ export function activate(context: vscode.ExtensionContext) {
 
   vscode.commands.executeCommand('setContext', 'ext:allFavoriteViews', ['favorites', 'favorites-full-view'])
 
-  const favoritesProvider = new FavoritesProvider()
+  initializeDiagnostics(context)
+  logOperation('extension.started', {
+    version: context.extension?.packageJSON.version || 'development',
+    workspaceFolders: vscode.workspace.workspaceFolders?.map((folder) => folder.uri.toString()) || [],
+  })
+  const activity = new FileActivity(context.workspaceState, () => favoritesProvider.refresh())
+  const favoritesProvider = new FavoritesProvider(activity)
+  context.subscriptions.push(activity)
+  context.subscriptions.push(onResourcesRenamed((renames) => activity.remap(renames)))
+  context.subscriptions.push(onResourcesDeleted((uris) => activity.remove(uris)))
+  context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(async (editors) => {
+    await activity.markOpened(editors.map((editor) => editor.document.uri))
+  }))
+  activity.start()
   const groupCommandProvider = new GroupCommandProvider()
 
   // Add to context subscriptions
@@ -63,6 +81,8 @@ export function activate(context: vscode.ExtensionContext) {
     showCollapseAll: true,
     dragAndDropController: favoritesProvider,
   })
+  const autoReveal = new AutoReveal(favoritesProvider, [explorerTree, tree])
+  context.subscriptions.push(autoReveal)
 
   const updateViewLanguage = async () => {
     await vscode.commands.executeCommand('setContext', 'ext:favoritesEnglish', getLanguage() === 'en')
@@ -73,16 +93,21 @@ export function activate(context: vscode.ExtensionContext) {
     }
   }
   context.subscriptions.push(configMgr.onConfigChange(() => {
+    activity.invalidate()
     void updateViewLanguage()
     favoritesProvider.refresh()
+    void autoReveal.sync()
   }))
   void updateViewLanguage()
   context.subscriptions.push(explorerTree, tree)
 
   vscode.workspace.onDidChangeConfiguration(
     async () => {
+      activity.invalidate()
+      activity.configure()
       await updateViewLanguage()
       favoritesProvider.refresh()
+      await autoReveal.sync()
     },
     undefined,
     context.subscriptions,
@@ -125,6 +150,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(copyRelativePath())
   context.subscriptions.push(newFolder(favoritesProvider))
   context.subscriptions.push(moveToFolder(favoritesProvider))
+  context.subscriptions.push(moveToParentFolder(favoritesProvider))
+  context.subscriptions.push(deleteFiles(favoritesProvider))
   context.subscriptions.push(stage())
   context.subscriptions.push(stage(true))
   context.subscriptions.push(open(favoritesProvider))
@@ -132,7 +159,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(moveDown(favoritesProvider))
   context.subscriptions.push(moveToTop(favoritesProvider))
   context.subscriptions.push(moveToBottom(favoritesProvider))
-  context.subscriptions.push(refresh(favoritesProvider))
+  context.subscriptions.push(refresh(favoritesProvider, activity))
   context.subscriptions.push(toggleSort(favoritesProvider))
   context.subscriptions.push(changeGroup(favoritesProvider))
   context.subscriptions.push(addNewGroup(favoritesProvider))

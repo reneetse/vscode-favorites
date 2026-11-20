@@ -3,7 +3,7 @@ import * as path from 'path'
 import { ItemInSettingsJson } from '../model'
 import { DEFAULT_GROUP } from '../enum'
 import configMgr from './configMgr'
-import { resourcePathToUri } from './resourcePaths'
+import { resourcePathToUri, newFavoritePath } from './resourcePaths'
 export { resourcePathToUri } from './resourcePaths'
 import type { GitExtension, Repository, API } from '../git'
 
@@ -63,20 +63,13 @@ export async function getCurrentResources(): Promise<Array<ItemInSettingsJson>> 
 export async function addFavoriteUris(uris: readonly vscode.Uri[], group: string): Promise<number> {
   const resources = await getCurrentResources()
   const existing = new Set(resources.filter((item) => item.group === group).map((item) => resourcePathToUri(item.filePath).toString()))
-  const rootPath = getSingleRootPath()
   let added = 0
 
   for (const uri of uris) {
     if (existing.has(uri.toString())) {
       continue
     }
-    let filePath = uri.scheme === 'file' ? uri.fsPath : uri.toString()
-    if (uri.scheme === 'file' && rootPath && !isMultiRoots()) {
-      const relative = path.relative(rootPath, uri.fsPath)
-      if (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)) {
-        filePath = relative
-      }
-    }
+    const filePath = newFavoritePath(uri)
     resources.push({ filePath, group })
     existing.add(uri.toString())
     added++

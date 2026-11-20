@@ -35,5 +35,10 @@
   "sort.MTIME_DESC": "Recently modified first",
   "sort.MTIME_ASC": "Oldest modified first",
   "sort.FILETYPE": "File type",
-  "sort.MANUAL": "Manual order"
+  "sort.MANUAL": "Manual order",
+  "command.favorites.moveToParentFolder": "Move to Parent Folder",
+  "command.favorites.deleteFiles": "Delete Files / Folders...",
+  "command.favorites.showDiagnostics": "Favorites: Show Diagnostics",
+  "configuration.refreshInterval.description": "Refresh interval in seconds. 0 disables periodic refresh; default: 30.",
+  "configuration.autoReveal.description": "Select the active editor file in visible Favorites views without moving keyboard focus."
 }

@@ -51,7 +51,7 @@ test('moving duplicate basenames from different directories never overwrites eit
   assert.equal(f.appliedEdits.length, 0)
 })
 
-test('dropping selected files onto a directory moves disk files instead of adding child favorites', async (t) => {
+test('dropping selected files onto a directory moves disk files and shows one grouped root', async (t) => {
   const f = await fixture(t)
   const a = f.file('outside/a.md'), b = f.file('outside/b.md')
   const jack = Uri.file(path.join(f.root, 'jack'))
@@ -63,7 +63,7 @@ test('dropping selected files onto a directory moves disk files instead of addin
   await controller.handleDrop({ ...f.item(jack), contextValue: 'uri.resource.dir' }, transfer, {})
   assert.equal(fs.existsSync(a.fsPath), false)
   assert.ok(fs.existsSync(path.join(jack.fsPath, 'a.md')) && fs.existsSync(path.join(jack.fsPath, 'b.md')))
-  assert.deepEqual(f.config.resources, [{ filePath: 'jack', group: 'Default' }])
+  assert.deepEqual(Array.from(await controller.getChildren(), (item) => item.label), ['jack'])
   assert.equal(f.config.sortOrder, 'MANUAL')
 })
 
@@ -77,7 +77,7 @@ test('folder moves update descendant favorites without changing similarly prefix
   f.config.resources = ['folder/nested/a.md', 'folder-other/b.md']
   const folder = { ...f.item(Uri.file(path.join(f.root, 'folder'))), contextValue: 'uri.resource.dir' }
   await f.run('favorites.moveToFolder', folder, [folder, f.item(child, true)])
-  assert.deepEqual(f.config.resources, ['jack/folder/nested/a.md', 'folder-other/b.md'])
+  assert.deepEqual(f.config.resources, ['jack/folder/nested/a.md', 'folder-other/b.md', { filePath: 'jack/folder', group: 'Default' }])
   assert.ok(fs.existsSync(path.join(target.fsPath, 'folder/nested/a.md')))
 })
 

@@ -23,5 +23,8 @@
   "favorites.stage",
   "favorites.forceStage",
   "favorites.newFolder",
-  "favorites.moveToFolder"
+  "favorites.moveToFolder",
+  "favorites.moveToParentFolder",
+  "favorites.deleteFiles",
+  "favorites.showDiagnostics"
 ]

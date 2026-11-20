@@ -1,5 +1,14 @@
 <!--Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.-->
 
+### 2026-11-20 (1.17.0)
+
+1. Default new configurations to recently modified first and refresh every 30 seconds, with a configurable interval and manual refresh.
+2. Mark newly discovered, unopened files with a NEW icon, persisting state and clearing the marker when shown in an editor.
+3. Group reachable nested favorites under their real directories while retaining bookmark data and excluded independent entries.
+4. Add clear destination paths, Move to Parent Folder, and operation diagnostics for file management.
+5. Add confirmed file/folder deletion with trash support, separately confirmed permanent fallback, and target/root validation.
+6. Follow the active editor in visible Favorites views with selectable auto-reveal and real parent chains.
+
 ### 2026-11-20 (1.16.0)
 
 1. Add modified-time sorting in both directions and a sort picker, with natural name ordering and folders first.

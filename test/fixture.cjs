@@ -57,9 +57,13 @@ class EventEmitter {
   }
 }
 
-async function fixture(t, overrides = {}) {
+async function fixture(t, overrides = {}, options = {}) {
+  const subscriptions = []
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'favorites-batch-'))
-  t.after(() => fs.rmSync(temporary, { recursive: true, force: true }))
+  t.after(() => {
+    subscriptions.forEach((item) => item?.dispose())
+    fs.rmSync(temporary, { recursive: true, force: true })
+  })
   const git = (root, ...args) =>
     execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }).toString()
   const repositories = []
@@ -89,7 +93,15 @@ async function fixture(t, overrides = {}) {
   const configurationListeners = []
   const renameListeners = []
   const appliedEdits = []
-  const input = { name: undefined, folder: undefined, pick: undefined }
+  const input = { name: undefined, folder: undefined, pick: undefined, confirm: undefined }
+  const visibleEditorListeners = []
+  const activeEditorListeners = []
+  const visibilityListeners = new Map()
+  const revealed = []
+  const settings = { filesExclude: {} }
+  const timers = new Set()
+  const storage = {}
+  const diagnostics = []
   const api = {
     git: { path: 'git' },
     repositories,
@@ -116,6 +128,8 @@ async function fixture(t, overrides = {}) {
       }
     },
     TreeItemCollapsibleState: { None: 0, Collapsed: 1 },
+    ThemeColor: class { constructor(id) { this.id = id } },
+    ThemeIcon: class { constructor(id, color) { this.id = id; this.color = color } },
     FileType: { File: 1, Directory: 2 },
     ViewColumn: { Beside: -2 },
     DataTransferItem: class {
@@ -129,9 +143,11 @@ async function fixture(t, overrides = {}) {
     env: { clipboard: { writeText: async (text) => copied.push(text) } },
     workspace: {
       workspaceFolders: [{ uri: Uri.file(root) }],
+      asRelativePath: (uri) => path.relative(root, uri.fsPath),
       getConfiguration: (section) => ({
         get: (key, fallback) =>
-          section === 'favorites' ? structuredClone(config[key] ?? fallback) : fallback,
+          section === 'favorites' ? structuredClone(config[key] ?? fallback)
+            : section === 'files' && key === 'exclude' ? structuredClone(settings.filesExclude) : fallback,
         update: async (key, value) => {
           writes.push(key)
           config[key] = structuredClone(value)
@@ -155,6 +171,7 @@ async function fixture(t, overrides = {}) {
           return { type: stat.isFile() ? 1 : 2, mtime: stat.mtimeMs, ctime: stat.ctimeMs, size: stat.size }
         },
         createDirectory: async (uri) => fs.mkdirSync(uri.fsPath, { recursive: true }),
+        delete: async (uri, options) => fs.rmSync(uri.fsPath, { recursive: !!options?.recursive }),
         readFile: async (uri) => fs.readFileSync(uri.fsPath),
         writeFile: async (uri, content) => fs.writeFileSync(uri.fsPath, content),
         readDirectory: async (uri) =>
@@ -166,20 +183,40 @@ async function fixture(t, overrides = {}) {
     window: {
       createTreeView: (id, options) => {
         views.set(id, options)
-        const view = { dispose() {} }
+        const listeners = []
+        visibilityListeners.set(id, listeners)
+        const view = {
+          visible: true, dispose() {},
+          onDidChangeVisibility: (listener) => { listeners.push(listener); return { dispose() {} } },
+          reveal: async (target, options) => { revealed.push({ view: id, target, options }) },
+        }
         treeViews.set(id, view)
         return view
       },
+      visibleTextEditors: [],
+      onDidChangeVisibleTextEditors: (listener) => { visibleEditorListeners.push(listener); return { dispose() {} } },
+      onDidChangeActiveTextEditor: (listener) => { activeEditorListeners.push(listener); return { dispose() {} } },
+      createOutputChannel: () => ({
+        info: (...args) => diagnostics.push(args), warn: (...args) => diagnostics.push(args),
+        error: (...args) => diagnostics.push(args), show() {}, dispose() {},
+      }),
       showInformationMessage: async (message) => {
         messages.push(['info', message])
       },
-      showWarningMessage: async (message) => {
+      showWarningMessage: async (message, ...args) => {
         messages.push(['warning', message])
+        return input.confirm ? args.find((item) => typeof item === 'string') : undefined
       },
       showErrorMessage: async (message) => {
         messages.push(['error', message])
       },
-      showQuickPick: async (items) => input.pick ? items.find((item) => item.value === input.pick) : 'Other',
+      showQuickPick: async (items) => {
+        if (items.some((item) => item.value === 'browse')) {
+          if (!input.folder) return undefined
+          return items.find((item) => item.value === input.folder.toString()) || items.find((item) => item.value === 'browse')
+        }
+        return input.pick ? items.find((item) => item.value === input.pick) : 'Other'
+      },
       showInputBox: async () => input.name,
       showOpenDialog: async () => input.folder ? [input.folder] : undefined,
     },
@@ -207,11 +244,23 @@ async function fixture(t, overrides = {}) {
     require: (name) => (name === 'vscode' ? vscode : require(name)),
     console: { log() {}, error: (...args) => failures.push(args) },
     Buffer,
-    process,
+    process: Object.create(process, { platform: { value: options.platform || process.platform } }),
     setTimeout,
     clearTimeout,
+    setInterval: (callback, delay) => {
+      const timer = { callback, delay, unref() {} }
+      timers.add(timer)
+      return timer
+    },
+    clearInterval: (timer) => timers.delete(timer),
   })
-  module.exports.activate({ subscriptions: [] })
+  module.exports.activate({
+    subscriptions,
+    workspaceState: {
+      get: (key, fallback) => structuredClone(storage[key] ?? fallback),
+      update: async (key, value) => { storage[key] = structuredClone(value) },
+    },
+  })
   await new Promise(setImmediate)
   const file = (name, repo = repository) => {
     const filePath = path.join(repo.rootUri.fsPath, name)
@@ -253,6 +302,25 @@ async function fixture(t, overrides = {}) {
     input,
     contexts,
     appliedEdits,
+    diagnostics,
+    storage,
+    timers,
+    revealed,
+    settings,
+    activateEditor: async (uri) => {
+      vscode.window.activeTextEditor = uri ? { document: { uri } } : undefined
+      for (const listener of activeEditorListeners) await listener(vscode.window.activeTextEditor)
+    },
+    showView: async (id, visible) => {
+      treeViews.get(id).visible = visible
+      for (const listener of visibilityListeners.get(id)) await listener({ visible })
+    },
+    tick: async () => { for (const timer of [...timers]) await timer.callback() },
+    showEditors: async (...uris) => {
+      vscode.window.visibleTextEditors = uris.map((uri) => ({ document: { uri } }))
+      for (const listener of visibleEditorListeners) await listener(vscode.window.visibleTextEditors)
+      await new Promise(setImmediate)
+    },
     rename: async (files) => Promise.all(renameListeners.map((listener) => listener({ files }))),
     changeConfig: async (key, value) => {
       config[key] = value

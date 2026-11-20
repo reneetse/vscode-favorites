@@ -12,7 +12,9 @@ export function resourcePathToUri(value: string): vscode.Uri {
 }
 
 export function uriKey(uri: vscode.Uri): string {
-  const key = isFileSystemUri(uri) ? uri.with({ query: '', fragment: '' }).toString() : uri.toString()
+  let normalized = uri.path.replace(/\/+$/, '') || '/'
+  if (/^\/[a-z]:$/i.test(normalized)) normalized += '/'
+  const key = isFileSystemUri(uri) ? uri.with({ path: normalized, query: '', fragment: '' }).toString() : uri.toString()
   return process.platform === 'win32' && isFileSystemUri(uri) ? key.toLowerCase() : key
 }
 
@@ -33,4 +35,19 @@ export function serializeFavoriteUri(uri: vscode.Uri, original: string): string 
     return path.relative(root.fsPath, uri.fsPath) || '.'
   }
   return uri.fsPath
+}
+
+export function newFavoritePath(uri: vscode.Uri): string {
+  return serializeFavoriteUri(uri, (vscode.workspace.workspaceFolders?.length || 0) === 1 ? '.' : uri.fsPath)
+}
+
+export function parentDirectory(uri: vscode.Uri): vscode.Uri {
+  const current = uri.path.replace(/\/+$/, '') || '/'
+  if (/^\/[a-z]:$/i.test(current)) return uri.with({ path: current + '/' })
+  if (uri.scheme === 'file' && uri.authority && current.split('/').filter(Boolean).length <= 1) {
+    return uri.with({ path: current + '/' })
+  }
+  let parent = path.posix.dirname(current)
+  if (/^\/[a-z]:$/i.test(parent)) parent += '/'
+  return uri.with({ path: parent })
 }

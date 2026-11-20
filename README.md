@@ -11,7 +11,7 @@ An extension that lets the developer mark resources (files or folders) as favori
 
 ## Install
 
-For this repository's customized **1.16.0** build, install `releases/vscode-favorites-1.16.0.vsix` using **Extensions: Install from VSIX...**, then run **Developer: Reload Window**. See [the Chinese usage guide](docs/jack/指南_Favorites文件管理与排序.md). The Marketplace installation below uses the original distribution.
+For this repository's customized **1.17.0** build, install `releases/vscode-favorites-1.17.0.vsix` using **Extensions: Install from VSIX...**, then run **Developer: Reload Window**. See [the Chinese usage guide](docs/jack/指南_Favorites文件管理与排序.md). The Marketplace installation below uses the original distribution.
 
 Launch VS Code Quick Open (`cmd`/`ctrl` + `p`), paste the following command, and press Enter.
 
@@ -58,16 +58,30 @@ Use the **Toggle Folder of Active File** command from the Command Palette (`cmd`
 
 ### Sorting and Language
 
-Click **选择排序方式 / Choose a sort order** in either Favorites view to select name ascending/descending, recently/oldest modified first, file type, or manual order. Names use natural numeric ordering (for example, `note2.md` before `note10.md`). Folders are listed first except in manual order. The selected mode also applies to expanded folders; saving a file or refreshing the view updates modification-time ordering.
+Click **选择排序方式 / Choose a sort order** in either Favorites view to select name ascending/descending, recently/oldest modified first, file type, or manual order. Names use natural numeric ordering (for example, `note2.md` before `note10.md`). Folders are listed first except in manual order. The default is recently modified first. The selected mode also applies to expanded folders; periodic refresh (30 seconds by default), saving a file, or manual refresh updates the view.
 
 The interface defaults to Chinese. Set `favorites.language` to `zh-CN`, `en`, or `auto` (follow VS Code). Menus, prompts, view titles, and group messages update without reloading.
 
+### Refresh, New Files and Active Editor
+
+Set `favorites.refreshInterval` to the refresh interval in seconds (default `30`; `0` disables the timer). Refresh scans favorite folders without filesystem watchers. The first scan establishes a baseline; later new files show a blue **NEW** icon until displayed in an editor. This state is kept per workspace and follows plugin file moves.
+
+`favorites.autoReveal` defaults to `true`: active files inside the current favorite group are selected and their parents expanded in visible Favorites views, retaining editor keyboard focus. Hidden views follow the active file when shown. Only reachable nodes are revealed; independently bookmarked excluded files retain their own root entries.
+
 ### Creating Folders and Moving Files
 
+Reachable nested bookmarks are displayed under their actual favorite directories, without deleting the stored bookmark. Files excluded from folder contents keep an independent root entry. An independently bookmarked nested item can still be removed from favorites.
+
 Right-click a folder and choose **新建子文件夹 / New Folder**. Right-clicking a file creates the folder beside that file.
-Select files or folders, then use **移动到文件夹… / Move to Folder...** to choose an existing destination. Dragging resources from within a Favorites view onto a folder also moves the actual files. External Explorer/editor drops only add favorite shortcuts; select those entries in Favorites to move them. Same-name conflicts (including case-only differences among selected items) are rejected before the batch starts, and favorite paths in all groups follow moved files and folder descendants. Selecting a folder and its child moves the folder once.
+Select files or folders, then use **移动到文件夹… / Move to Folder...** to choose an existing destination. Dragging resources from within a Favorites view onto a folder also moves the actual files. External Explorer/editor drops only add favorite shortcuts; select those entries in Favorites to move them. Same-name conflicts (including case-only differences among selected items) are rejected before the batch starts, and favorite paths in all groups follow moved files and folder descendants. Selecting a folder and its child moves the folder once. **移到上一级目录 / Move to Parent Folder** moves items out of their current container, and files moved outside favorite folders retain a standalone bookmark. The destination picker displays full paths.
 
 File moves use VS Code workspace edits and participate in Undo. Runtime I/O errors can interrupt a batch: the error reports completed items when they can be verified. Inspect the source and destination before retrying; an interrupted batch is not guaranteed an Undo entry. Favorites are updated for moves that completed. Operations support filesystems on the VS Code host, including Remote SSH; different filesystem providers cannot be mixed in one move.
+
+### Deleting Files and Diagnostics
+
+**删除文件／文件夹… / Delete Files / Folders...** deletes actual disk contents, with a confirmation listing full paths. It first requests trash; when trash is unsupported it asks separately before permanently deleting. Roots, workspace/home directories and their ancestors are protected; symbolic links and direct virtual/remote-provider URIs are rejected. Normal files on a Remote SSH extension host use host file URIs and are supported. **Remove from Favorites** only changes bookmarks.
+
+Run **收藏：查看操作日志 / Favorites: Show Diagnostics** to inspect source paths, selected destinations, skipped moves, completed operations and errors in the Favorites output channel.
 
 ### Drag and Drop Support
 
@@ -89,8 +103,10 @@ Your favorites are listed in a separate view and can be quickly accessed from th
 ```javascript
 {
     "favorites.resources": [], // resources path you prefer to mark
-    "favorites.sortOrder": "ASC", // DESC, MTIME_DESC, MTIME_ASC, FILETYPE, MANUAL
+    "favorites.sortOrder": "MTIME_DESC", // ASC, DESC, MTIME_ASC, FILETYPE, MANUAL
     "favorites.language": "zh-CN", // en, auto
+    "favorites.refreshInterval": 30, // seconds; 0 disables periodic refresh
+    "favorites.autoReveal": true, // follow the active editor in visible Favorites views
     "favorites.saveSeparated": false, // whether to use an extra config file
     "favorites.groups": ["Default"], // the groups you have created
     "favorites.currentGroup": "Default" // determine the current using group

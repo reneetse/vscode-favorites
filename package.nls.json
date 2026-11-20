@@ -35,5 +35,10 @@
   "sort.MTIME_DESC": "最近修改优先",
   "sort.MTIME_ASC": "最早修改优先",
   "sort.FILETYPE": "文件类型",
-  "sort.MANUAL": "手动排序"
+  "sort.MANUAL": "手动排序",
+  "command.favorites.moveToParentFolder": "移到上一级目录",
+  "command.favorites.deleteFiles": "删除文件／文件夹…",
+  "command.favorites.showDiagnostics": "收藏：查看操作日志",
+  "configuration.refreshInterval.description": "定时刷新间隔（秒），默认 30 秒，设置为 0 关闭定时刷新。",
+  "configuration.autoReveal.description": "在可见收藏视图中自动定位并选中当前编辑的文件，不抢编辑器焦点。"
 }

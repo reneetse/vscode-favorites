@@ -6,5 +6,5 @@ export async function getSortOrder(): Promise<string> {
   // Older .vscfavoriterc files kept sorting in VS Code settings.
   return typeof stored === 'string'
     ? stored
-    : vscode.workspace.getConfiguration('favorites').get<string>('sortOrder', 'ASC')
+    : vscode.workspace.getConfiguration('favorites').get<string>('sortOrder', 'MTIME_DESC')
 }
