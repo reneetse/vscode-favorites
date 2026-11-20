@@ -1,3 +1,4 @@
+import { t } from '../helper/i18n'
 import * as vscode from 'vscode'
 
 import { Resource, FavoritesProvider } from '../provider/FavoritesProvider'
@@ -28,14 +29,14 @@ export function changeGroup(favoritesProvider: FavoritesProvider) {
     vscode.window
       .showQuickPick(
         isGitUsed && doesCurrentBranchNameGroupExist && !isInCurrentBranchGroup
-          ? ['Switch to current branch group'].concat(
+          ? [t('Switch to current branch group')].concat(
               groups.filter((item) => item !== branchName && item !== currentGroup),
             )
           : groups.filter((item) => item !== branchName && item !== currentGroup),
-        { title: 'Choose a group you want to switch to' },
+        { title: t('Choose a group you want to switch to') },
       )
       .then(async (selectedCommand) => {
-        if (selectedCommand === 'Switch to current branch group') {
+        if (selectedCommand === t('Switch to current branch group')) {
           await configMgr.save('currentGroup', branchName)
         } else if (selectedCommand != undefined) {
           await configMgr.save('currentGroup', selectedCommand)

@@ -4,7 +4,9 @@ import * as vscode from 'vscode'
 import { FavoritesProvider } from './provider/FavoritesProvider'
 import { GroupCommandProvider } from './provider/GroupCommandProvider'
 import configMgr from './helper/configMgr'
-import { resolveResourcePath } from './helper/util'
+import { updateFavoritePaths } from './helper/favoriteRenames'
+import { t, getLanguage } from './helper/i18n'
+import { registerLocalizedCommands } from './helper/localizedCommands'
 
 import {
   addToFavorites,
@@ -30,6 +32,8 @@ import {
   copyRelativePath,
   open,
   stage,
+  newFolder,
+  moveToFolder,
 } from './command'
 
 // this method is called when your extension is activated
@@ -44,14 +48,10 @@ export function activate(context: vscode.ExtensionContext) {
   const favoritesProvider = new FavoritesProvider()
   const groupCommandProvider = new GroupCommandProvider()
 
-  configMgr.onConfigChange(() => {
-    favoritesProvider.refresh()
-  })
-
   // Add to context subscriptions
   context.subscriptions.push(groupCommandProvider)
 
-  vscode.window.createTreeView('favorites', {
+  const explorerTree = vscode.window.createTreeView('favorites', {
     treeDataProvider: favoritesProvider,
     canSelectMany: true,
     showCollapseAll: true,
@@ -64,18 +64,31 @@ export function activate(context: vscode.ExtensionContext) {
     dragAndDropController: favoritesProvider,
   })
 
-  // Set initial group message
-  configMgr.get('currentGroup').then((currentGroup) => {
-    tree.message = `Current Group: ${currentGroup || 'Default'}`
-  })
+  const updateViewLanguage = async () => {
+    await vscode.commands.executeCommand('setContext', 'ext:favoritesEnglish', getLanguage() === 'en')
+    const currentGroup = ((await configMgr.get('currentGroup')) as string) || 'Default'
+    for (const view of [explorerTree, tree]) {
+      view.title = t('Favorites')
+      view.message = t('Current Group: {0}', currentGroup)
+    }
+  }
+  context.subscriptions.push(configMgr.onConfigChange(() => {
+    void updateViewLanguage()
+    favoritesProvider.refresh()
+  }))
+  void updateViewLanguage()
+  context.subscriptions.push(explorerTree, tree)
 
   vscode.workspace.onDidChangeConfiguration(
-    () => {
-      configMgr.get('currentGroup').then((currentGroup) => {
-        tree.message = `Current Group: ${currentGroup || 'Default'}`
-        favoritesProvider.refresh()
-      })
+    async () => {
+      await updateViewLanguage()
+      favoritesProvider.refresh()
     },
+    undefined,
+    context.subscriptions,
+  )
+  vscode.workspace.onDidSaveTextDocument(
+    () => favoritesProvider.refresh(),
     undefined,
     context.subscriptions,
   )
@@ -83,60 +96,12 @@ export function activate(context: vscode.ExtensionContext) {
   // Listen for file rename events to update favorites
   vscode.workspace.onDidRenameFiles(
     async (event) => {
-      const resources = ((await configMgr.get('resources')) as Array<any>) || []
-      let updated = false
-
-      const updatedResources = resources.map((resource) => {
-        if (typeof resource === 'string') {
-          return resource
-        }
-
-        let oldPath = resolveResourcePath(resource.filePath)
-
-        // Check if this resource was renamed
-        for (const rename of event.files) {
-          if (oldPath === rename.oldUri.fsPath) {
-            updated = true
-            // Update to new path
-            if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
-              return { ...resource, filePath: rename.newUri.fsPath }
-            }
-            const rootPath = vscode.workspace.workspaceFolders[0].uri.fsPath
-            if (rename.newUri.fsPath.startsWith(rootPath)) {
-              return { ...resource, filePath: rename.newUri.fsPath.substr(rootPath.length + 1) }
-            } else {
-              return { ...resource, filePath: rename.newUri.fsPath }
-            }
-          }
-        }
-        return resource
-      })
-
-      // Check if any renamed file is inside a favorite folder
-      let folderUpdated = false
-      for (const resource of resources) {
-        if (typeof resource === 'object' && resource.filePath) {
-          let folderPath = resolveResourcePath(resource.filePath)
-
-          // Check if any renamed file is inside this folder
-          for (const rename of event.files) {
-            if (rename.oldUri.fsPath.startsWith(folderPath + require('path').sep)) {
-              folderUpdated = true
-              break
-            }
-          }
-
-          if (folderUpdated) {
-            break
-          }
-        }
-      }
-
-      if (updated) {
-        await configMgr.save('resources', updatedResources)
-        favoritesProvider.refresh()
-      } else if (folderUpdated) {
-        // Refresh if any file inside a favorite folder was renamed
+      try {
+        await updateFavoritePaths(event.files)
+      } catch (error) {
+        console.error('Error updating favorites after rename:', error)
+        vscode.window.showErrorMessage(t('Failed to update favorites after rename: {0}', (error as Error).message))
+      } finally {
         favoritesProvider.refresh()
       }
     },
@@ -144,6 +109,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions,
   )
 
+  context.subscriptions.push(...registerLocalizedCommands())
   context.subscriptions.push(addToFavorites())
   context.subscriptions.push(addToFavoritesGroup())
   context.subscriptions.push(deleteFavorite())
@@ -157,6 +123,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(copyFileName())
   context.subscriptions.push(copyFilePath())
   context.subscriptions.push(copyRelativePath())
+  context.subscriptions.push(newFolder(favoritesProvider))
+  context.subscriptions.push(moveToFolder(favoritesProvider))
   context.subscriptions.push(stage())
   context.subscriptions.push(stage(true))
   context.subscriptions.push(open(favoritesProvider))

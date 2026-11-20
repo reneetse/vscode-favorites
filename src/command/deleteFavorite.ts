@@ -1,3 +1,4 @@
+import { t } from '../helper/i18n'
 import * as vscode from 'vscode'
 import type { Resource } from '../provider/FavoritesProvider'
 import configMgr from '../helper/configMgr'
@@ -16,12 +17,12 @@ export function deleteFavorite() {
           )
         ) {
           return vscode.window.showWarningMessage(
-            'Only top-level favorites can be removed. Please select favorite entries, not folder contents.',
+            t('Only top-level favorites can be removed. Please select favorite entries, not folder contents.'),
           )
         }
         const uris = getSelectedUris(value, selected)
         if (!uris.length) {
-          return vscode.window.showWarningMessage('You have to choose a resource first')
+          return vscode.window.showWarningMessage(t('You have to choose a resource first'))
         }
         const paths = new Set(uris.map((uri) => uri.toString()))
         const currentGroup = ((await configMgr.get('currentGroup')) as string) || DEFAULT_GROUP
@@ -34,7 +35,7 @@ export function deleteFavorite() {
         )
       } catch (error) {
         console.error('Error deleting from favorites:', error)
-        vscode.window.showErrorMessage('Failed to delete resource from favorites')
+        vscode.window.showErrorMessage(t('Failed to delete resource from favorites'))
       }
     },
   )

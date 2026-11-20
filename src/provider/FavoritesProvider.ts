@@ -1,11 +1,16 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
-import * as os from 'os'
 
-import { getCurrentResources, isMultiRoots, pathResolve, resolveResourcePath } from '../helper/util'
+import { getCurrentResources, isMultiRoots } from '../helper/util'
 import configMgr from '../helper/configMgr'
+import { resourcePathToUri, serializeFavoriteUri, uriKey } from '../helper/resourcePaths'
+import { moveResources } from '../helper/fileOperations'
+import { t, getLanguage } from '../helper/i18n'
+import { getSortOrder } from '../helper/sortOrder'
 import { DEFAULT_GROUP, FileStat } from '../enum'
 import { Item, ItemInSettingsJson } from '../model'
+
+const FAVORITES_MIME = 'application/vnd.howardzuo.vscode-favorites.resources+json'
 
 export class FavoritesProvider
   implements vscode.TreeDataProvider<Resource>, vscode.TreeDragAndDropController<Resource>
@@ -17,8 +22,8 @@ export class FavoritesProvider
   public lastOpened: { uri: vscode.Uri; date: Date } | undefined
 
   // Drag and drop mime types
-  readonly dragMimeTypes = ['resource']
-  readonly dropMimeTypes = ['resource', 'application/vnd.code.tree.uri', 'text/uri-list', 'text/plain']
+  readonly dragMimeTypes = [FAVORITES_MIME]
+  readonly dropMimeTypes = [FAVORITES_MIME, 'application/vnd.code.tree.uri', 'text/uri-list', 'text/plain']
 
   constructor() {
     // Listen for changes to files.exclude configuration
@@ -43,59 +48,19 @@ export class FavoritesProvider
     return element
   }
 
-  getChildren(element?: Resource): Thenable<Resource[]> {
-    return this.getSortedFavoriteResources().then(async (resources) => {
-      if (!resources || !resources.length) {
-        return []
-      }
-      const currentGroup = ((await configMgr.get('currentGroup')) as string) || DEFAULT_GROUP
-
-      if (!element) {
-        return Promise.all(resources.map((r) => this.getResourceStat(r)))
-          .then((data: Array<Item>) => {
-            return data.filter((i) => i.stat !== FileStat.NEITHER)
-          })
-          .then((data: Array<Item>) => {
-            return data.filter((i) => i.group === currentGroup)
-          })
-          .then((data: Array<Item>) => this.data2Resource(data, 'resource'))
-      }
-
-      return this.getChildrenResources({ filePath: element.value, group: currentGroup })
-    })
+  async getChildren(element?: Resource): Promise<Resource[]> {
+    const currentGroup = ((await configMgr.get('currentGroup')) as string) || DEFAULT_GROUP
+    if (element) return this.getChildrenResources({ filePath: element.value, group: currentGroup })
+    const resources = (await getCurrentResources()).filter((item) => item.group === currentGroup)
+    const sort = await getSortOrder()
+    const items = await this.sortResources(resources, sort)
+    return this.data2Resource(items.filter((item) => item.stat !== FileStat.NEITHER), 'resource')
   }
 
-  private getUriFromPath(filePath: string): vscode.Uri {
-    if (filePath.match(/^[A-Za-z][A-Za-z0-9+-.]*:/)) {
-      // filePath is a uri string
-      return vscode.Uri.parse(filePath)
-    } else {
-      // filePath is a file path
-      let resolvedPath: string
-      if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-        const workspacePath = vscode.workspace.workspaceFolders[0].uri.fsPath
-        // Always resolve relative to workspace root
-        resolvedPath = path.resolve(workspacePath, filePath)
-      } else {
-        // No workspace, use absolute path
-        resolvedPath = path.resolve(filePath)
-      }
-      return vscode.Uri.file(resolvedPath)
-    }
-  }
+  private async getChildrenResources(item: ItemInSettingsJson): Promise<Array<Resource>> {
+    const sort = await getSortOrder()
 
-  private getConfig<T>(section: string, key: string, defaultValue?: T): T | undefined {
-    if (defaultValue !== undefined) {
-      return vscode.workspace.getConfiguration(section).get<T>(key, defaultValue)
-    } else {
-      return vscode.workspace.getConfiguration(section).get<T>(key)
-    }
-  }
-
-  private getChildrenResources(item: ItemInSettingsJson): Thenable<Array<Resource>> {
-    const sort = this.getConfig<string>('favorites', 'sortOrder') || 'ASC'
-
-    const uri = this.getUriFromPath(item.filePath)
+    const uri = resourcePathToUri(item.filePath)
 
     // Get files.exclude configuration
     const filesExclude =
@@ -165,8 +130,9 @@ export class FavoritesProvider
               entryPath = path.join(item.filePath, e[0])
             }
           } else {
-            // Use absolute path
-            entryPath = entryUri.fsPath
+            entryPath = item.filePath.match(/^[A-Za-z][A-Za-z0-9+-.]*:/) && !path.isAbsolute(item.filePath)
+              ? entryUri.toString()
+              : entryUri.fsPath
           }
           return { filePath: entryPath, group: '' }
         })
@@ -212,20 +178,6 @@ export class FavoritesProvider
     return regex.test(normalizedFilePath)
   }
 
-  private async getSortedFavoriteResources(): Promise<Array<ItemInSettingsJson>> {
-    const resources = await getCurrentResources()
-    const sort = this.getConfig<string>('favorites', 'sortOrder') || 'ASC'
-
-    if (sort === 'MANUAL') {
-      return resources
-    }
-
-    return this.sortResources(
-      resources.map((item) => item),
-      sort,
-    ).then((res) => res.map((r) => ({ filePath: r.filePath, group: r.group })))
-  }
-
   private compareByFileType(a: Item, b: Item): number {
     const aStat = a.stat
     const bStat = b.stat
@@ -256,33 +208,24 @@ export class FavoritesProvider
   }
 
   private compareByName(a: Item, b: Item, isAsc: boolean): number {
-    const aName = path.basename(a.filePath).toLowerCase()
-    const bName = path.basename(b.filePath).toLowerCase()
-    const aStat = a.stat
-    const bStat = b.stat
-
-    if (aStat === FileStat.DIRECTORY && bStat === FileStat.FILE) {
-      return -1
-    }
-    if (aStat === FileStat.FILE && bStat === FileStat.DIRECTORY) {
-      return 1
-    }
-
-    if (aName < bName) {
-      return isAsc ? -1 : 1
-    }
-    return aName === bName ? 0 : isAsc ? 1 : -1
+    const folderOrder = Number(b.stat === FileStat.DIRECTORY) - Number(a.stat === FileStat.DIRECTORY)
+    if (folderOrder) return folderOrder
+    const aName = path.posix.basename(a.uri?.path || a.filePath)
+    const bName = path.posix.basename(b.uri?.path || b.filePath)
+    return aName.localeCompare(bName, getLanguage(), { numeric: true, sensitivity: 'base' }) * (isAsc ? 1 : -1)
   }
 
-  private sortResources(resources: Array<ItemInSettingsJson>, sort: string): Thenable<Array<Item>> {
-    return Promise.all(resources.map((r) => this.getResourceStat(r))).then((resourceStats) => {
-      if (sort === 'FILETYPE') {
-        resourceStats.sort((a, b) => this.compareByFileType(a, b))
-      } else {
-        const isAsc = sort === 'ASC'
-        resourceStats.sort((a, b) => this.compareByName(a, b, isAsc))
+  private async sortResources(resources: Array<ItemInSettingsJson>, sort: string): Promise<Array<Item>> {
+    const items = await Promise.all(resources.map((resource) => this.getResourceStat(resource)))
+    if (sort === 'MANUAL') return items
+    return items.sort((a, b) => {
+      if (sort === 'FILETYPE') return this.compareByFileType(a, b)
+      if (sort === 'MTIME_ASC' || sort === 'MTIME_DESC') {
+        const folderOrder = Number(b.stat === FileStat.DIRECTORY) - Number(a.stat === FileStat.DIRECTORY)
+        const delta = ((a.mtime || 0) - (b.mtime || 0)) * (sort === 'MTIME_ASC' ? 1 : -1)
+        return folderOrder || delta || this.compareByName(a, b, true)
       }
-      return resourceStats
+      return this.compareByName(a, b, sort !== 'DESC')
     })
   }
 
@@ -296,6 +239,7 @@ export class FavoritesProvider
           return {
             filePath: item.filePath,
             stat: FileStat.FILE,
+            mtime: stats.mtimeMs,
             uri,
             group: item.group,
           }
@@ -304,6 +248,7 @@ export class FavoritesProvider
           return {
             filePath: item.filePath,
             stat: FileStat.DIRECTORY,
+            mtime: stats.mtimeMs,
             uri,
             group: item.group,
           }
@@ -321,35 +266,24 @@ export class FavoritesProvider
 
   private getResourceStat(item: ItemInSettingsJson): Thenable<Item> {
     return new Promise((resolve) => {
-      let uri: vscode.Uri
-      // Check if it's an absolute path
-      if (path.isAbsolute(item.filePath)) {
-        // It's an absolute path, treat as file path
-        const resolvedPath = resolveResourcePath(item.filePath)
-        uri = vscode.Uri.file(resolvedPath)
-      } else if (item.filePath.match(/^[A-Za-z][A-Za-z0-9+-.]*:/)) {
-        // filePath is a uri string
-        uri = vscode.Uri.parse(item.filePath)
-      } else {
-        // filePath is a relative file path
-        const resolvedPath = resolveResourcePath(item.filePath)
-        uri = vscode.Uri.file(resolvedPath)
-      }
+      const uri = resourcePathToUri(item.filePath)
 
       vscode.workspace.fs.stat(uri).then(
         (fileStat) => {
-          if (fileStat.type === vscode.FileType.File) {
+          if (fileStat.type & vscode.FileType.File) {
             return resolve({
               filePath: item.filePath,
               stat: FileStat.FILE,
+              mtime: fileStat.mtime,
               uri,
               group: item.group,
             })
           }
-          if (fileStat.type === vscode.FileType.Directory) {
+          if (fileStat.type & vscode.FileType.Directory) {
             return resolve({
               filePath: item.filePath,
               stat: FileStat.DIRECTORY,
+              mtime: fileStat.mtime,
               uri,
               group: item.group,
             })
@@ -370,7 +304,7 @@ export class FavoritesProvider
   }
 
   private createResource(item: Item, contextValue: string, fileNameCounts?: Map<string, number>): Resource {
-    const uri = item.uri || vscode.Uri.file(resolveResourcePath(item.filePath))
+    const uri = item.uri || resourcePathToUri(item.filePath)
     const isDirectory = item.stat === FileStat.DIRECTORY
     const collapsibleState = isDirectory
       ? vscode.TreeItemCollapsibleState.Collapsed
@@ -431,8 +365,8 @@ export class FavoritesProvider
     token: vscode.CancellationToken,
   ): void {
     dataTransfer.set(
-      'resource',
-      new vscode.DataTransferItem(JSON.stringify(source.map((item) => item.value))),
+      FAVORITES_MIME,
+      new vscode.DataTransferItem(JSON.stringify(source.map((item) => item.resourceUri.toString()))),
     )
   }
 
@@ -445,7 +379,7 @@ export class FavoritesProvider
       let sourcePaths: string[] = []
 
       // Check if dragging from within favorites (internal drag)
-      const resourceData = source.get('resource')
+      const resourceData = source.get(FAVORITES_MIME)
       if (resourceData) {
         sourcePaths = JSON.parse(await resourceData.asString()) as string[]
       }
@@ -454,23 +388,41 @@ export class FavoritesProvider
         const uriData = source.get('application/vnd.code.tree.uri')
         if (uriData) {
           const uriString = await uriData.asString()
-          const uri = vscode.Uri.parse(uriString)
-          sourcePaths = [uri.fsPath]
+          sourcePaths = [uriString]
         } else {
           // Try other common URI formats
           const textData = source.get('text/uri-list')
           if (textData) {
             const text = await textData.asString()
-            const uris = text.split('\n').filter((line) => line.trim())
-            sourcePaths = uris.map((uriStr) => vscode.Uri.parse(uriStr).fsPath)
+            sourcePaths = text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith('#'))
           }
         }
       }
 
       if (!sourcePaths.length) {
+        if (!token.isCancellationRequested) {
+          vscode.window.showWarningMessage(t('No resource paths were provided. Use Add to Favorites in Explorer first.'))
+        }
         return
       }
 
+      // Older Explorer versions omit folders from external URI lists. Only our
+      // own drag payload has a complete selection suitable for filesystem moves.
+      if (resourceData && target?.contextValue.endsWith('.dir')) {
+        const count = await moveResources(sourcePaths.map(resourcePathToUri), target.resourceUri, token)
+        this.refresh()
+        if (!token.isCancellationRequested) {
+          vscode.window.showInformationMessage(count ? t('Moved {0} item(s).', count) : t('The selected items are already in this folder.'))
+        }
+        return
+      }
+
+      // Root drops and drops onto files reorder/add shortcuts using URI identity.
+      const incoming = [...new Map(sourcePaths.map((value) => {
+        const uri = resourcePathToUri(value)
+        return [uriKey(uri), uri] as const
+      })).values()]
+      const sourceKeys = new Set(incoming.map(uriKey))
       const currentResources = await getCurrentResources()
       const currentGroup = ((await configMgr.get('currentGroup')) as string) || DEFAULT_GROUP
 
@@ -479,22 +431,21 @@ export class FavoritesProvider
       const otherGroupResources = currentResources.filter((item) => item.group !== currentGroup)
 
       // Remove source items from current group resources (for internal drag)
-      const remainingResources = currentGroupResources.filter((item) => !sourcePaths.includes(item.filePath))
+      const remainingResources = currentGroupResources.filter((item) => !sourceKeys.has(uriKey(resourcePathToUri(item.filePath))))
 
       // Determine insertion point
       let insertIndex = remainingResources.length
       if (target) {
-        const targetIndex = remainingResources.findIndex((item) => item.filePath === target.value)
+        const targetIndex = remainingResources.findIndex((item) => uriKey(resourcePathToUri(item.filePath)) === uriKey(target.resourceUri))
         if (targetIndex !== -1) {
           insertIndex = targetIndex
         }
       }
 
       // Create new items for source paths
-      const sourceItems = sourcePaths.map((filePath) => ({
-        filePath,
-        group: currentGroup,
-      }))
+      const sourceItems = incoming.map((uri) => currentGroupResources.find((item) =>
+        uriKey(resourcePathToUri(item.filePath)) === uriKey(uri),
+      ) || ({ filePath: serializeFavoriteUri(uri, isMultiRoots() ? uri.fsPath : '.'), group: currentGroup }))
 
       // Insert source items at the determined position
       const newResources = [
@@ -511,8 +462,13 @@ export class FavoritesProvider
 
       // Refresh the tree view
       this.refresh()
+      if (!resourceData && target?.contextValue.endsWith('.dir')) {
+        vscode.window.showInformationMessage(t('Added favorites. To move files, select them in Favorites and use Move to Folder.'))
+      }
     } catch (error) {
       console.error('Error handling drop:', error)
+      this.refresh()
+      vscode.window.showErrorMessage(t('Failed to handle drop: {0}', (error as Error).message))
     }
   }
 }

@@ -1,3 +1,4 @@
+import { t } from '../helper/i18n'
 import * as vscode from 'vscode'
 
 import { Resource } from '../provider/FavoritesProvider'
@@ -5,7 +6,7 @@ import { Resource } from '../provider/FavoritesProvider'
 export function revealInSideBar() {
   return vscode.commands.registerCommand('favorites.revealInSideBar', async function (value: Resource) {
     if (!value && !vscode.window.activeTextEditor) {
-      return vscode.window.showWarningMessage('You have to choose a resource first')
+      return vscode.window.showWarningMessage(t('You have to choose a resource first'))
     }
 
     if (value.uri) {

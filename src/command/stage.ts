@@ -1,3 +1,4 @@
+import { t } from '../helper/i18n'
 import * as vscode from 'vscode'
 import * as path from 'path'
 import { execFile } from 'child_process'
@@ -16,28 +17,28 @@ export function stage(force = false) {
       try {
         const uris = getSelectedUris(value, selected)
         if (!uris.length) {
-          return vscode.window.showWarningMessage('Please select files to stage.')
+          return vscode.window.showWarningMessage(t('Please select files to stage.'))
         }
         const extension = vscode.extensions.getExtension<GitExtension>('vscode.git')
         if (!extension) {
-          throw new Error('The built-in Git extension is not available.')
+          throw new Error(t('The built-in Git extension is not available.'))
         }
         await extension.activate()
         const git = getGitApi()
         if (!git) {
-          throw new Error('The built-in Git extension is not enabled.')
+          throw new Error(t('The built-in Git extension is not enabled.'))
         }
 
         const repositories = new Map<Repository, vscode.Uri[]>()
         for (const uri of uris) {
           if (uri.scheme !== 'file' || !((await vscode.workspace.fs.stat(uri)).type & vscode.FileType.File)) {
             throw new Error(
-              'Only files on this VS Code host can be staged. Please exclude folders and virtual resources.',
+              t('Only files on this VS Code host can be staged. Please exclude folders and virtual resources.'),
             )
           }
           const repository = git.getRepository(uri)
           if (!repository) {
-            throw new Error(`No open Git repository contains ${uri.fsPath}.`)
+            throw new Error(t('No open Git repository contains {0}.', uri.fsPath))
           }
           const relative = path.relative(repository.rootUri.fsPath, uri.fsPath)
           if (
@@ -46,7 +47,7 @@ export function stage(force = false) {
             relative.startsWith('..' + path.sep) ||
             path.isAbsolute(relative)
           ) {
-            throw new Error(`File is outside its Git repository: ${uri.fsPath}`)
+            throw new Error(t('File is outside its Git repository: {0}', uri.fsPath))
           }
           const files = repositories.get(repository) || []
           files.push(uri)
@@ -87,17 +88,17 @@ export function stage(force = false) {
         }
         if (failures.length || refreshFailures.length) {
           const refreshMessage = refreshFailures.length
-            ? ` Git status refresh failed for: ${refreshFailures.join(', ')}.`
+            ? ' ' + t('Git status refresh failed for: {0}.', refreshFailures.join(', '))
             : ''
           vscode.window.showWarningMessage(
-            `Git staging completed for ${completed} file(s); ${failures.length} failed. ${failures[0] || ''}${refreshMessage}`,
+            t('Git staging completed for {0} file(s); {1} failed. {2}{3}', completed, failures.length, failures[0] || '', refreshMessage),
           )
         } else {
-          vscode.window.showInformationMessage(`Git staging completed for ${completed} file(s).`)
+          vscode.window.showInformationMessage(t('Git staging completed for {0} file(s).', completed))
         }
       } catch (error) {
         console.error('Error staging favorites:', error)
-        vscode.window.showErrorMessage(`Failed to stage favorites: ${(error as Error).message}`)
+        vscode.window.showErrorMessage(t('Failed to stage favorites: {0}', (error as Error).message))
       }
     },
   )

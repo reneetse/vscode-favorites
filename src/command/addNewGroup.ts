@@ -1,3 +1,4 @@
+import { t } from '../helper/i18n'
 import * as vscode from 'vscode'
 
 import { Resource, FavoritesProvider } from '../provider/FavoritesProvider'
@@ -20,16 +21,16 @@ export function addNewGroup(favoritesProvider: FavoritesProvider) {
 
     vscode.window
       .showQuickPick(
-        ['Input new group name'].concat(!isGitUsed ? [] : ['Create group with current branch name']),
+        [t('Input new group name')].concat(!isGitUsed ? [] : [t('Create group with current branch name')]),
       )
       .then(async (label) => {
-        if (label == 'Input new group name') {
-          vscode.window.showInputBox({ title: 'Input a name for new group' }).then(async (input) => {
+        if (label == t('Input new group name')) {
+          vscode.window.showInputBox({ title: t('Input a name for new group') }).then(async (input) => {
             if (input) {
               await addNewGroupInConfig(input, previousGroups)
             }
           })
-        } else if (label == 'Create group with current branch name') {
+        } else if (label == t('Create group with current branch name')) {
           await addNewGroupInConfig(branchName, previousGroups)
         }
       })
@@ -41,6 +42,6 @@ async function addNewGroupInConfig(name: string, previousGroups: Array<string>) 
     await configMgr.save('groups', previousGroups.concat([name]))
     await configMgr.save('currentGroup', name)
   } else {
-    vscode.window.showErrorMessage(`The group "${name}" already exists.`)
+    vscode.window.showErrorMessage(t('The group "{0}" already exists.', name))
   }
 }

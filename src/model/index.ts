@@ -6,6 +6,7 @@ export interface Item {
     stat: FileStat;
     group:string;
     uri?: Uri;
+    mtime?: number;
 }
 
 export interface ItemInSettingsJson {

@@ -11,6 +11,8 @@ An extension that lets the developer mark resources (files or folders) as favori
 
 ## Install
 
+For this repository's customized **1.16.0** build, install `releases/vscode-favorites-1.16.0.vsix` using **Extensions: Install from VSIX...**, then run **Developer: Reload Window**. See [the Chinese usage guide](docs/jack/指南_Favorites文件管理与排序.md). The Marketplace installation below uses the original distribution.
+
 Launch VS Code Quick Open (`cmd`/`ctrl` + `p`), paste the following command, and press Enter.
 
 ```
@@ -54,11 +56,24 @@ Use the **Toggle Favorite** command from the Command Palette (`cmd`/`ctrl` + `sh
 
 Use the **Toggle Folder of Active File** command from the Command Palette (`cmd`/`ctrl` + `shift` + `p`) to quickly add or remove the folder containing the currently active file from your favorites.
 
+### Sorting and Language
+
+Click **选择排序方式 / Choose a sort order** in either Favorites view to select name ascending/descending, recently/oldest modified first, file type, or manual order. Names use natural numeric ordering (for example, `note2.md` before `note10.md`). Folders are listed first except in manual order. The selected mode also applies to expanded folders; saving a file or refreshing the view updates modification-time ordering.
+
+The interface defaults to Chinese. Set `favorites.language` to `zh-CN`, `en`, or `auto` (follow VS Code). Menus, prompts, view titles, and group messages update without reloading.
+
+### Creating Folders and Moving Files
+
+Right-click a folder and choose **新建子文件夹 / New Folder**. Right-clicking a file creates the folder beside that file.
+Select files or folders, then use **移动到文件夹… / Move to Folder...** to choose an existing destination. Dragging resources from within a Favorites view onto a folder also moves the actual files. External Explorer/editor drops only add favorite shortcuts; select those entries in Favorites to move them. Same-name conflicts (including case-only differences among selected items) are rejected before the batch starts, and favorite paths in all groups follow moved files and folder descendants. Selecting a folder and its child moves the folder once.
+
+File moves use VS Code workspace edits and participate in Undo. Runtime I/O errors can interrupt a batch: the error reports completed items when they can be verified. Inspect the source and destination before retrying; an interrupted batch is not guaranteed an Undo entry. Favorites are updated for moves that completed. Operations support filesystems on the VS Code host, including Remote SSH; different filesystem providers cannot be mixed in one move.
+
 ### Drag and Drop Support
 
 #### Reordering Favorites
 
-You can reorder favorites within the favorites panel by dragging and dropping them to your desired position. The sort order will automatically switch to "MANUAL" when you start dragging.
+Drop onto a file or empty space to reorder/add favorite shortcuts. This switches the sort order to "MANUAL". Dragging within Favorites onto a folder moves the actual files into it and preserves the selected sort mode. External drops add shortcuts.
 
 #### Adding Files via Drag and Drop
 
@@ -74,8 +89,9 @@ Your favorites are listed in a separate view and can be quickly accessed from th
 ```javascript
 {
     "favorites.resources": [], // resources path you prefer to mark
-    "favorites.sortOrder": "ASC", // DESC, MANUAL
-    "favorites.saveSeparated": false // whether to use an extra config file
+    "favorites.sortOrder": "ASC", // DESC, MTIME_DESC, MTIME_ASC, FILETYPE, MANUAL
+    "favorites.language": "zh-CN", // en, auto
+    "favorites.saveSeparated": false, // whether to use an extra config file
     "favorites.groups": ["Default"], // the groups you have created
     "favorites.currentGroup": "Default" // determine the current using group
 }
@@ -128,10 +144,10 @@ Your favorites are listed in a separate view and can be quickly accessed from th
 
    This checks TypeScript, builds the production bundle, and packages `releases/vscode-favorites-<version>.vsix` in one command. `npm run build` and `npm run package` are equivalent. Install dependencies before the first build; the output VSIX is committed for direct installation via **Extensions: Install from VSIX...**.
 
-   Run the batch-command checks (including real temporary Git repositories) with:
+   Run the command, filesystem, sorting, and language checks (including real temporary files and Git repositories) with:
 
    ```bash
-   npm run test:batch
+   npm test
    ```
 
 2. **Run tests**:
@@ -139,6 +155,10 @@ Your favorites are listed in a separate view and can be quickly accessed from th
    ```bash
    pnpm run test
    ```
+
+   These tests run without a VS Code window, using a VS Code API adapter and real temporary files. They do not perform live desktop/Remote SSH UI acceptance. The legacy host test files in `src/test/` are not executed by this command.
+
+   Menu contributions and command aliases are generated from `src/i18n/titles.en.json` and `src/i18n/zh-CN.json` by `npm run sync:menus`; compilation and packaging run this step automatically. Run it after changing command declarations or translations.
 
 3. **Package the extension**:
    ```bash

@@ -1,3 +1,4 @@
+import { t } from '../helper/i18n'
 import * as vscode from 'vscode'
 import configMgr from '../helper/configMgr'
 import { getCurrentResources, isMultiRoots, getSingleRootPath, hasRoot } from '../helper/util'
@@ -9,7 +10,7 @@ export function toggleFavorite() {
       // Get active editor
       const editor = vscode.window.activeTextEditor
       if (!editor) {
-        vscode.window.showInformationMessage('No active editor found')
+        vscode.window.showInformationMessage(t('No active editor found'))
         return
       }
 
@@ -35,20 +36,20 @@ export function toggleFavorite() {
         // Remove from favorites
         resources.splice(resourceIndex, 1)
         await configMgr.save('resources', resources)
-        vscode.window.showInformationMessage('Removed from favorites')
+        vscode.window.showInformationMessage(t('Removed from favorites'))
       } else {
         // Add to favorites
         const currentGroup = ((await configMgr.get('currentGroup')) as string) || DEFAULT_GROUP
         resources.push({ filePath: resourcePath, group: currentGroup })
         await configMgr.save('resources', resources)
-        vscode.window.showInformationMessage('Added to favorites')
+        vscode.window.showInformationMessage(t('Added to favorites'))
       }
 
       // Refresh favorites view
       await vscode.commands.executeCommand('favorites.nav.refresh')
     } catch (error) {
       console.error('Error toggling favorite:', error)
-      vscode.window.showErrorMessage('Failed to toggle favorite status')
+      vscode.window.showErrorMessage(t('Failed to toggle favorite status'))
     }
   })
 }

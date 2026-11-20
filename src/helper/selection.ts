@@ -1,3 +1,4 @@
+import { t } from './i18n'
 import * as vscode from 'vscode'
 import type { Resource } from '../provider/FavoritesProvider'
 
@@ -37,6 +38,6 @@ export function rejectBatchMove(target: Resource, selected?: readonly Resource[]
   if (getSelectedTargets(target, selected).length <= 1) {
     return false
   }
-  vscode.window.showInformationMessage('Batch moving is not supported. Please select a single item.')
+  vscode.window.showInformationMessage(t('Batch moving is not supported. Please select a single item.'))
   return true
 }

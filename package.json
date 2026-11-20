@@ -2,7 +2,7 @@
   "name": "vscode-favorites",
   "displayName": "favorites",
   "description": "Mark resources (files or folders, local and remote) as favorites, so they can be easily accessed.",
-  "version": "1.15.4",
+  "version": "1.16.0",
   "publisher": "howardzuo",
   "engines": {
     "vscode": "^1.80.0"
@@ -11,14 +11,15 @@
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "compile": "npm run check-types && node esbuild.js",
+    "compile": "npm run sync:menus && npm run check-types && node esbuild.js",
     "check-types": "tsc --noEmit",
     "build": "npm run package",
     "package": "node scripts/package.cjs",
     "pub": "vsce publish",
     "clean": "rimraf out dist *.vsix",
-    "test": "node --experimental-specifier-resolution=node --experimental-vm-modules node_modules/vscode-test/out/runTest.js --extensionDevelopmentPath=. --testPathPattern=src/test",
-    "test:batch": "node --test test/batch.test.cjs"
+    "test": "npm run test:batch",
+    "test:batch": "npm run sync:menus && node --test test/*.test.cjs",
+    "sync:menus": "node scripts/localize-menus.cjs"
   },
   "categories": [
     "Other"
@@ -36,7 +37,8 @@
   "activationEvents": [
     "onCommand:favorites.addToFavorites",
     "onView:favorites",
-    "onView:favorites-full-view"
+    "onView:favorites-full-view",
+    "onStartupFinished"
   ],
   "license": "GPL-3.0",
   "main": "./dist/extension.js",
@@ -48,35 +50,60 @@
         "favorites.resources": {
           "type": "array",
           "default": [],
-          "description": "Resources marked as favorites"
+          "description": "%configuration.resources.description%"
         },
         "favorites.sortOrder": {
           "type": "string",
           "enum": [
             "ASC",
             "DESC",
+            "MTIME_DESC",
+            "MTIME_ASC",
             "FILETYPE",
             "MANUAL"
           ],
           "default": "ASC",
-          "description": "Specify an order for all favorites"
+          "description": "%configuration.sortOrder.description%",
+          "enumDescriptions": [
+            "%sort.ASC%",
+            "%sort.DESC%",
+            "%sort.MTIME_DESC%",
+            "%sort.MTIME_ASC%",
+            "%sort.FILETYPE%",
+            "%sort.MANUAL%"
+          ]
         },
         "favorites.currentGroup": {
           "type": "string",
           "default": "Default",
-          "description": "The name of current group"
+          "description": "%configuration.currentGroup.description%"
         },
         "favorites.groups": {
           "type": "array",
           "default": [
             "Default"
           ],
-          "description": "The names of all groups in the workspace"
+          "description": "%configuration.groups.description%"
         },
         "favorites.saveSeparated": {
           "type": "boolean",
           "default": false,
-          "description": "Whether to save marked resources in separate .vscfavoriterc"
+          "description": "%configuration.saveSeparated.description%"
+        },
+        "favorites.language": {
+          "type": "string",
+          "enum": [
+            "zh-CN",
+            "en",
+            "auto"
+          ],
+          "default": "zh-CN",
+          "description": "%configuration.language.description%",
+          "enumDescriptions": [
+            "始终使用中文 / Always use Chinese",
+            "始终使用英文 / Always use English",
+            "跟随 VS Code / Follow VS Code"
+          ]
         }
       }
     },
@@ -84,7 +111,7 @@
       "activitybar": [
         {
           "id": "favorites-explorer",
-          "title": "%view.favorites.title%",
+          "title": "Favorites",
           "icon": "$(heart)"
         }
       ]
@@ -109,127 +136,268 @@
         {
           "command": "favorites.addToFavorites",
           "group": "favorites",
-          "when": "config.favorites.groups.length <= 1"
+          "when": "config.favorites.groups.length <= 1 && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.localized.en.addToFavorites",
+          "group": "favorites",
+          "when": "config.favorites.groups.length <= 1 && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))"
         },
         {
           "command": "favorites.addToFavoritesGroup",
           "group": "favorites",
-          "when": "config.favorites.groups.length > 1"
+          "when": "config.favorites.groups.length > 1 && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.localized.en.addToFavoritesGroup",
+          "group": "favorites",
+          "when": "config.favorites.groups.length > 1 && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))"
         },
         {
           "command": "favorites.deleteFavorite",
-          "group": "favorites"
+          "group": "favorites",
+          "when": "(config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.localized.en.deleteFavorite",
+          "group": "favorites",
+          "when": "(config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))"
         }
       ],
       "explorer/context": [
         {
           "command": "favorites.addToFavorites",
           "group": "favorites",
-          "when": "config.favorites.groups.length <= 1"
+          "when": "config.favorites.groups.length <= 1 && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.localized.en.addToFavorites",
+          "group": "favorites",
+          "when": "config.favorites.groups.length <= 1 && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))"
         },
         {
           "command": "favorites.addToFavoritesGroup",
           "group": "favorites",
-          "when": "config.favorites.groups.length > 1"
+          "when": "config.favorites.groups.length > 1 && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.localized.en.addToFavoritesGroup",
+          "group": "favorites",
+          "when": "config.favorites.groups.length > 1 && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))"
         }
       ],
       "view/title": [
         {
           "command": "favorites.nav.refresh",
-          "when": "view in ext:allFavoriteViews",
+          "when": "view in ext:allFavoriteViews && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "navigation"
+        },
+        {
+          "command": "favorites.localized.en.nav.refresh",
+          "when": "view in ext:allFavoriteViews && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "navigation"
         },
         {
           "command": "favorites.nav.sort",
-          "when": "view in ext:allFavoriteViews",
+          "when": "view in ext:allFavoriteViews && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "navigation"
+        },
+        {
+          "command": "favorites.localized.en.nav.sort",
+          "when": "view in ext:allFavoriteViews && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "navigation"
         },
         {
           "command": "favorites.group.changeGroup",
-          "when": "view in ext:allFavoriteViews",
+          "when": "view in ext:allFavoriteViews && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "navigation"
+        },
+        {
+          "command": "favorites.localized.en.group.changeGroup",
+          "when": "view in ext:allFavoriteViews && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "navigation"
         },
         {
           "command": "favorites.group.newGroup",
-          "when": "view in ext:allFavoriteViews",
+          "when": "view in ext:allFavoriteViews && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "navigation"
+        },
+        {
+          "command": "favorites.localized.en.group.newGroup",
+          "when": "view in ext:allFavoriteViews && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "navigation"
         }
       ],
       "view/item/context": [
         {
           "command": "favorites.revealInOS.mac",
-          "when": "isMac && view in ext:allFavoriteViews && viewItem =~ /^resource/ && !listMultiSelection",
+          "when": "isMac && view in ext:allFavoriteViews && viewItem =~ /^resource/ && !listMultiSelection && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "navigation"
+        },
+        {
+          "command": "favorites.localized.en.revealInOS.mac",
+          "when": "isMac && view in ext:allFavoriteViews && viewItem =~ /^resource/ && !listMultiSelection && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "navigation"
         },
         {
           "command": "favorites.revealInOS.windows",
-          "when": "isWindows && view in ext:allFavoriteViews && viewItem =~ /^resource/ && !listMultiSelection",
+          "when": "isWindows && view in ext:allFavoriteViews && viewItem =~ /^resource/ && !listMultiSelection && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "navigation"
+        },
+        {
+          "command": "favorites.localized.en.revealInOS.windows",
+          "when": "isWindows && view in ext:allFavoriteViews && viewItem =~ /^resource/ && !listMultiSelection && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "navigation"
         },
         {
           "command": "favorites.revealInOS.other",
-          "when": "!isMac && !isWindows && view in ext:allFavoriteViews && viewItem =~ /^resource/ && !listMultiSelection",
+          "when": "!isMac && !isWindows && view in ext:allFavoriteViews && viewItem =~ /^resource/ && !listMultiSelection && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "navigation"
+        },
+        {
+          "command": "favorites.localized.en.revealInOS.other",
+          "when": "!isMac && !isWindows && view in ext:allFavoriteViews && viewItem =~ /^resource/ && !listMultiSelection && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "navigation"
         },
         {
           "command": "favorites.revealInSideBar",
-          "when": "view in ext:allFavoriteViews && !listMultiSelection",
+          "when": "view in ext:allFavoriteViews && !listMultiSelection && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "navigation"
+        },
+        {
+          "command": "favorites.localized.en.revealInSideBar",
+          "when": "view in ext:allFavoriteViews && !listMultiSelection && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "navigation"
         },
         {
           "command": "favorites.openToSide",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^resource(Child)?$|^uri\\.resource(Child)?$/",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^resource(Child)?$|^uri\\.resource(Child)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "navigation"
+        },
+        {
+          "command": "favorites.localized.en.openToSide",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^resource(Child)?$|^uri\\.resource(Child)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "navigation"
         },
         {
           "command": "favorites.deleteFavorite",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "operation"
+        },
+        {
+          "command": "favorites.localized.en.deleteFavorite",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "operation"
         },
         {
           "command": "favorites.copyFileName",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "copy@1"
+        },
+        {
+          "command": "favorites.localized.en.copyFileName",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "copy@1"
         },
         {
           "command": "favorites.copyFilePath",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "copy@2"
+        },
+        {
+          "command": "favorites.localized.en.copyFilePath",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "copy@2"
         },
         {
           "command": "favorites.copyRelativePath",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "copy@3"
+        },
+        {
+          "command": "favorites.localized.en.copyRelativePath",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "copy@3"
         },
         {
           "command": "favorites.moveToTop",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "sort@1"
+        },
+        {
+          "command": "favorites.localized.en.moveToTop",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "sort@1"
         },
         {
           "command": "favorites.moveUp",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "sort@2"
+        },
+        {
+          "command": "favorites.localized.en.moveUp",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "sort@2"
         },
         {
           "command": "favorites.moveDown",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "sort@3"
+        },
+        {
+          "command": "favorites.localized.en.moveDown",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "sort@3"
         },
         {
           "command": "favorites.moveToBottom",
-          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "sort@4"
+        },
+        {
+          "command": "favorites.localized.en.moveToBottom",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /resource(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "sort@4"
         },
         {
           "command": "favorites.stage",
-          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?$/",
+          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "git"
+        },
+        {
+          "command": "favorites.localized.en.stage",
+          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
           "group": "git"
         },
         {
           "command": "favorites.forceStage",
-          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?$/",
+          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
           "group": "git"
+        },
+        {
+          "command": "favorites.localized.en.forceStage",
+          "when": "view in ext:allFavoriteViews && (resourceScheme == file || resourceScheme == vscode-remote) && viewItem =~ /^(uri\\.)?resource(Child)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
+          "group": "git"
+        },
+        {
+          "command": "favorites.newFolder",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && !listMultiSelection && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "file@1"
+        },
+        {
+          "command": "favorites.localized.en.newFolder",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && !listMultiSelection && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
+          "group": "file@1"
+        },
+        {
+          "command": "favorites.moveToFolder",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))",
+          "group": "file@2"
+        },
+        {
+          "command": "favorites.localized.en.moveToFolder",
+          "when": "view in ext:allFavoriteViews && viewItem =~ /^(uri\\.)?resource(Child)?(\\.dir)?$/ && (config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))",
+          "group": "file@2"
         }
       ],
       "commandPalette": [
@@ -238,7 +406,15 @@
           "when": "false"
         },
         {
+          "command": "favorites.localized.en.nav.refresh",
+          "when": "false"
+        },
+        {
           "command": "favorites.nav.sort",
+          "when": "false"
+        },
+        {
+          "command": "favorites.localized.en.nav.sort",
           "when": "false"
         },
         {
@@ -246,7 +422,15 @@
           "when": "false"
         },
         {
+          "command": "favorites.localized.en.revealInOS.mac",
+          "when": "false"
+        },
+        {
           "command": "favorites.revealInOS.windows",
+          "when": "false"
+        },
+        {
+          "command": "favorites.localized.en.revealInOS.windows",
           "when": "false"
         },
         {
@@ -254,7 +438,15 @@
           "when": "false"
         },
         {
+          "command": "favorites.localized.en.revealInOS.other",
+          "when": "false"
+        },
+        {
           "command": "favorites.revealInSideBar",
+          "when": "false"
+        },
+        {
+          "command": "favorites.localized.en.revealInSideBar",
           "when": "false"
         },
         {
@@ -262,7 +454,15 @@
           "when": "false"
         },
         {
+          "command": "favorites.localized.en.openToSide",
+          "when": "false"
+        },
+        {
           "command": "favorites.copyFileName",
+          "when": "false"
+        },
+        {
+          "command": "favorites.localized.en.copyFileName",
           "when": "false"
         },
         {
@@ -270,7 +470,15 @@
           "when": "false"
         },
         {
+          "command": "favorites.localized.en.copyFilePath",
+          "when": "false"
+        },
+        {
           "command": "favorites.copyRelativePath",
+          "when": "false"
+        },
+        {
+          "command": "favorites.localized.en.copyRelativePath",
           "when": "false"
         },
         {
@@ -278,7 +486,15 @@
           "when": "false"
         },
         {
+          "command": "favorites.localized.en.moveToTop",
+          "when": "false"
+        },
+        {
           "command": "favorites.moveUp",
+          "when": "false"
+        },
+        {
+          "command": "favorites.localized.en.moveUp",
           "when": "false"
         },
         {
@@ -286,7 +502,15 @@
           "when": "false"
         },
         {
+          "command": "favorites.localized.en.moveDown",
+          "when": "false"
+        },
+        {
           "command": "favorites.moveToBottom",
+          "when": "false"
+        },
+        {
+          "command": "favorites.localized.en.moveToBottom",
           "when": "false"
         },
         {
@@ -294,8 +518,88 @@
           "when": "false"
         },
         {
+          "command": "favorites.localized.en.stage",
+          "when": "false"
+        },
+        {
           "command": "favorites.forceStage",
           "when": "false"
+        },
+        {
+          "command": "favorites.localized.en.forceStage",
+          "when": "false"
+        },
+        {
+          "command": "favorites.newFolder",
+          "when": "false"
+        },
+        {
+          "command": "favorites.localized.en.newFolder",
+          "when": "false"
+        },
+        {
+          "command": "favorites.moveToFolder",
+          "when": "false"
+        },
+        {
+          "command": "favorites.localized.en.moveToFolder",
+          "when": "false"
+        },
+        {
+          "command": "favorites.group.changeGroup",
+          "when": "(config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.localized.en.group.changeGroup",
+          "when": "(config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.group.newGroup",
+          "when": "(config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.localized.en.group.newGroup",
+          "when": "(config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.addToFavorites",
+          "when": "(config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.localized.en.addToFavorites",
+          "when": "(config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.deleteFavorite",
+          "when": "(config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.localized.en.deleteFavorite",
+          "when": "(config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.toggleFavorite",
+          "when": "(config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.localized.en.toggleFavorite",
+          "when": "(config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.toggleFolderOfActiveFile",
+          "when": "(config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.localized.en.toggleFolderOfActiveFile",
+          "when": "(config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.addToFavoritesGroup",
+          "when": "(config.favorites.language != en && (config.favorites.language != auto || !ext:favoritesEnglish))"
+        },
+        {
+          "command": "favorites.localized.en.addToFavoritesGroup",
+          "when": "(config.favorites.language == en || (config.favorites.language == auto && ext:favoritesEnglish))"
         }
       ]
     },
@@ -306,8 +610,21 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "favorites.localized.en.nav.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "favorites.nav.sort",
         "title": "%command.favorites.sort%",
+        "icon": {
+          "dark": "images/sort_black.svg",
+          "light": "images/sort_light.svg"
+        }
+      },
+      {
+        "command": "favorites.localized.en.nav.sort",
+        "title": "Toggle Sort",
         "icon": {
           "dark": "images/sort_black.svg",
           "light": "images/sort_light.svg"
@@ -322,8 +639,24 @@
         }
       },
       {
+        "command": "favorites.localized.en.group.changeGroup",
+        "title": "Change Current Group",
+        "icon": {
+          "dark": "images/switch_group_black.svg",
+          "light": "images/switch_group_light.svg"
+        }
+      },
+      {
         "command": "favorites.group.newGroup",
         "title": "%command.favorites.newGroup%",
+        "icon": {
+          "dark": "images/new_group_black.svg",
+          "light": "images/new_group_light.svg"
+        }
+      },
+      {
+        "command": "favorites.localized.en.group.newGroup",
+        "title": "Create New Group",
         "icon": {
           "dark": "images/new_group_black.svg",
           "light": "images/new_group_light.svg"
@@ -334,76 +667,168 @@
         "title": "%command.favorites.addtofavorites%"
       },
       {
+        "command": "favorites.localized.en.addToFavorites",
+        "title": "Add to Favorites"
+      },
+      {
         "command": "favorites.deleteFavorite",
         "title": "%command.favorites.deletefavorite%"
+      },
+      {
+        "command": "favorites.localized.en.deleteFavorite",
+        "title": "Remove from Favorites"
       },
       {
         "command": "favorites.moveUp",
         "title": "%command.favorites.moveup%"
       },
       {
+        "command": "favorites.localized.en.moveUp",
+        "title": "Move Up"
+      },
+      {
         "command": "favorites.moveDown",
         "title": "%command.favorites.movedown%"
+      },
+      {
+        "command": "favorites.localized.en.moveDown",
+        "title": "Move Down"
       },
       {
         "command": "favorites.moveToTop",
         "title": "%command.favorites.movetotop%"
       },
       {
+        "command": "favorites.localized.en.moveToTop",
+        "title": "Move to Top"
+      },
+      {
         "command": "favorites.moveToBottom",
         "title": "%command.favorites.movetobottom%"
+      },
+      {
+        "command": "favorites.localized.en.moveToBottom",
+        "title": "Move to Bottom"
       },
       {
         "command": "favorites.revealInOS.mac",
         "title": "%command.favorites.revealInOS.mac%"
       },
       {
+        "command": "favorites.localized.en.revealInOS.mac",
+        "title": "Reveal in Finder"
+      },
+      {
         "command": "favorites.revealInOS.windows",
         "title": "%command.favorites.revealInOS.windows%"
+      },
+      {
+        "command": "favorites.localized.en.revealInOS.windows",
+        "title": "Reveal in File Explorer"
       },
       {
         "command": "favorites.revealInOS.other",
         "title": "%command.favorites.revealInOS.other%"
       },
       {
+        "command": "favorites.localized.en.revealInOS.other",
+        "title": "Open Containing Folder"
+      },
+      {
         "command": "favorites.revealInSideBar",
         "title": "%command.favorites.revealInSideBar%"
+      },
+      {
+        "command": "favorites.localized.en.revealInSideBar",
+        "title": "Reveal in Side Bar"
       },
       {
         "command": "favorites.openToSide",
         "title": "%command.favorites.openToSide%"
       },
       {
+        "command": "favorites.localized.en.openToSide",
+        "title": "Open to the Side"
+      },
+      {
         "command": "favorites.copyFileName",
         "title": "%command.favorites.copyFileName%"
+      },
+      {
+        "command": "favorites.localized.en.copyFileName",
+        "title": "Copy File Name"
       },
       {
         "command": "favorites.copyFilePath",
         "title": "%command.favorites.copyFilePath%"
       },
       {
+        "command": "favorites.localized.en.copyFilePath",
+        "title": "Copy File Path"
+      },
+      {
         "command": "favorites.copyRelativePath",
         "title": "%command.favorites.copyRelativePath%"
+      },
+      {
+        "command": "favorites.localized.en.copyRelativePath",
+        "title": "Copy Relative Path"
       },
       {
         "command": "favorites.toggleFavorite",
         "title": "%command.favorites.toggleFavorite%"
       },
       {
+        "command": "favorites.localized.en.toggleFavorite",
+        "title": "Toggle Favorite"
+      },
+      {
         "command": "favorites.toggleFolderOfActiveFile",
         "title": "%command.favorites.toggleFolderOfActiveFile%"
+      },
+      {
+        "command": "favorites.localized.en.toggleFolderOfActiveFile",
+        "title": "Toggle Folder of Active File"
       },
       {
         "command": "favorites.addToFavoritesGroup",
         "title": "%command.favorites.addtofavorites%"
       },
       {
+        "command": "favorites.localized.en.addToFavoritesGroup",
+        "title": "Add to Favorites"
+      },
+      {
         "command": "favorites.stage",
         "title": "%command.favorites.stage%"
       },
       {
+        "command": "favorites.localized.en.stage",
+        "title": "Stage Changes"
+      },
+      {
         "command": "favorites.forceStage",
         "title": "%command.favorites.forceStage%"
+      },
+      {
+        "command": "favorites.localized.en.forceStage",
+        "title": "Force Stage Changes (Include Ignored Files)"
+      },
+      {
+        "command": "favorites.newFolder",
+        "title": "%command.favorites.newFolder%"
+      },
+      {
+        "command": "favorites.localized.en.newFolder",
+        "title": "New Folder"
+      },
+      {
+        "command": "favorites.moveToFolder",
+        "title": "%command.favorites.moveToFolder%"
+      },
+      {
+        "command": "favorites.localized.en.moveToFolder",
+        "title": "Move to Folder..."
       }
     ]
   },

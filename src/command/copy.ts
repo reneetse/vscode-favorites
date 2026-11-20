@@ -1,3 +1,4 @@
+import { t } from '../helper/i18n'
 import * as vscode from 'vscode'
 import * as path from 'path'
 import { EOL } from 'os'
@@ -10,7 +11,7 @@ function registerCopyCommand(command: string, getText: (uri: vscode.Uri) => stri
     async (value?: Resource, selected?: readonly Resource[]) => {
       const uris = getSelectedUris(value, selected)
       if (!uris.length) {
-        return vscode.window.showWarningMessage('You have to choose a resource first')
+        return vscode.window.showWarningMessage(t('You have to choose a resource first'))
       }
       await vscode.env.clipboard.writeText(uris.map(getText).join(EOL))
     },

@@ -1,3 +1,4 @@
+import { t } from '../helper/i18n'
 import * as vscode from 'vscode'
 
 import { Resource } from '../provider/FavoritesProvider'
@@ -22,7 +23,7 @@ export function revealInOS_other() {
 
 async function revealFileInOS(value: Resource) {
   if (!value && !vscode.window.activeTextEditor) {
-    return vscode.window.showWarningMessage('You have to choose a resource first')
+    return vscode.window.showWarningMessage(t('You have to choose a resource first'))
   }
   if (value.uri) {
     await vscode.commands.executeCommand('revealFileInOS', value.uri)

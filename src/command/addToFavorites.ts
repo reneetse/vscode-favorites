@@ -1,3 +1,4 @@
+import { t } from '../helper/i18n'
 import * as vscode from 'vscode'
 import { addFavoriteUris } from '../helper/util'
 import { getSelectedUris } from '../helper/selection'
@@ -11,7 +12,7 @@ export function addToFavorites() {
       try {
         const uris = getSelectedUris(fileUri, selected)
         if (!uris.length) {
-          return vscode.window.showWarningMessage('You have to choose a resource first')
+          return vscode.window.showWarningMessage(t('You have to choose a resource first'))
         }
         const currentGroup = ((await configMgr.get('currentGroup')) as string) || DEFAULT_GROUP
         await addFavoriteUris(uris, currentGroup)
@@ -22,7 +23,7 @@ export function addToFavorites() {
         }
       } catch (error) {
         console.error('Error adding to favorites:', error)
-        vscode.window.showErrorMessage('Failed to add resource to favorites')
+        vscode.window.showErrorMessage(t('Failed to add resource to favorites'))
       }
     },
   )

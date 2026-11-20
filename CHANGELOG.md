@@ -1,5 +1,13 @@
 <!--Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.-->
 
+### 2026-11-20 (1.16.0)
+
+1. Add modified-time sorting in both directions and a sort picker, with natural name ordering and folders first.
+2. Add real batch file/folder moves through context menus and folder drops, plus New Folder.
+3. Keep favorites synchronized across groups, directory renames, undo, and partially completed moves; reject overwrite conflicts before moving.
+4. Default the interface to Chinese and add English/follow-VS-Code language settings for menus and runtime messages.
+5. Add filesystem, sorting, and language regression checks and make `npm test` execute them.
+
 ### 2026-10-30 (1.15.4)
 
 1. Add Copy Relative Path to both Favorites context menus, relative to each resource's workspace folder, with absolute-path fallback for external files.

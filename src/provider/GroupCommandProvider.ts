@@ -1,3 +1,4 @@
+import { t } from '../helper/i18n'
 import * as vscode from 'vscode'
 import configMgr from '../helper/configMgr'
 import { getSelectedUris } from '../helper/selection'
@@ -44,7 +45,7 @@ export class GroupCommandProvider implements vscode.Disposable {
                 try {
                   const uris = getSelectedUris(fileUri, selected)
                   if (!uris.length) {
-                    return vscode.window.showWarningMessage('You have to choose a resource first')
+                    return vscode.window.showWarningMessage(t('You have to choose a resource first'))
                   }
                   await addFavoriteUris(uris, group)
 
@@ -55,7 +56,7 @@ export class GroupCommandProvider implements vscode.Disposable {
                   await vscode.commands.executeCommand('favorites.nav.refresh')
                 } catch (error) {
                   console.error('Error adding to favorites:', error)
-                  vscode.window.showErrorMessage('Failed to add resource to favorites')
+                  vscode.window.showErrorMessage(t('Failed to add resource to favorites'))
                 }
               },
             )

@@ -3,6 +3,8 @@ import * as path from 'path'
 import { ItemInSettingsJson } from '../model'
 import { DEFAULT_GROUP } from '../enum'
 import configMgr from './configMgr'
+import { resourcePathToUri } from './resourcePaths'
+export { resourcePathToUri } from './resourcePaths'
 import type { GitExtension, Repository, API } from '../git'
 
 export function getSingleRootPath(): string {
@@ -56,12 +58,6 @@ export async function getCurrentResources(): Promise<Array<ItemInSettingsJson>> 
     }
   })
   return newResources
-}
-
-export function resourcePathToUri(filePath: string): vscode.Uri {
-  return !path.isAbsolute(filePath) && /^[A-Za-z][A-Za-z0-9+-.]*:/.test(filePath)
-    ? vscode.Uri.parse(filePath)
-    : vscode.Uri.file(resolveResourcePath(filePath))
 }
 
 export async function addFavoriteUris(uris: readonly vscode.Uri[], group: string): Promise<number> {
