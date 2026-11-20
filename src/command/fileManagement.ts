@@ -4,7 +4,7 @@ import { getCurrentResources } from '../helper/util'
 import { resourcePathToUri, uriKey, isFileSystemUri, parentDirectory } from '../helper/resourcePaths'
 import type { Resource, FavoritesProvider } from '../provider/FavoritesProvider'
 import { getSelectedUris } from '../helper/selection'
-import { getTargetDirectory, moveResources, resourceExists, moveOutcomeMessage } from '../helper/fileOperations'
+import { getTargetDirectory, resourceExists, moveOutcomeMessage } from '../helper/fileOperations'
 import { t } from '../helper/i18n'
 
 export function newFolder(provider: FavoritesProvider) {
@@ -71,15 +71,13 @@ function registerMove(provider: FavoritesProvider, toParent: boolean) {
       if (toParent && parents.size !== 1) throw new Error(t('Select items with the same parent destination.'))
       const destination = toParent ? [...parents.values()][0] : await selectDestination(uris)
       if (!destination) return
-      const result = await moveResources(uris, destination)
-      provider.refresh()
+      const result = await provider.moveItems(uris, destination)
       if (!result.cancelled) {
         if (result.warnings.length) vscode.window.showWarningMessage(moveOutcomeMessage(result))
         else vscode.window.showInformationMessage(moveOutcomeMessage(result))
       }
     } catch (error) {
       console.error('Error moving files:', error)
-      provider.refresh()
       vscode.window.showErrorMessage(t('Failed to move files: {0}', (error as Error).message))
     }
   })

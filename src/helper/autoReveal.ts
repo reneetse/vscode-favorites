@@ -21,17 +21,31 @@ export class AutoReveal implements vscode.Disposable {
     const views = this.views.filter((view) => view.visible)
     if (!views.length) return
     try {
+      await this.provider.waitForMove()
+      if (revision !== this.revision || this.disposed) return
       const resource = await this.provider.findResource(editor.document.uri)
       if (!resource || revision !== this.revision || this.disposed) return
       this.queued = this.queued.catch(() => {}).then(async () => {
         if (revision !== this.revision || this.disposed) return
-        for (const view of views) {
-          if (revision !== this.revision || this.disposed) return
-          if (view.visible) {
-            try { await view.reveal(resource, { select: true, focus: false, expand: true }) }
-            catch (error) { logOperation('autoReveal.failed', { uri: editor.document.uri.toString(), error: String(error) }) }
+        await Promise.all(views.map(async (view) => {
+          if (!view.visible) return
+          const options = { select: true, focus: false, expand: false }
+          try {
+            await view.reveal(resource, options)
+          } catch {
+            // VS Code applies tree change events asynchronously after file edits.
+            await new Promise<void>((resolve) => setTimeout(resolve, 250))
+            if (revision !== this.revision || this.disposed || !view.visible) return
+            try {
+              const updated = await this.provider.findResource(editor.document.uri)
+              if (updated && revision === this.revision && !this.disposed && view.visible) {
+                await view.reveal(updated, options)
+              }
+            } catch (error) {
+              logOperation('autoReveal.failed', { uri: editor.document.uri.toString(), error: String(error) })
+            }
           }
-        }
+        }))
       })
       await this.queued
     } catch (error) {

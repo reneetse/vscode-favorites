@@ -20,7 +20,7 @@ export class FileActivity implements vscode.Disposable {
   private again = false
   private lastSaved: string | undefined
 
-  constructor(private state: vscode.Memento, private changed: () => void) {
+  constructor(private state: vscode.Memento, private changed: () => Promise<void>) {
     const saved = state.get<ActivityState>(STATE_KEY, { roots: {}, unread: [], opened: [] })
     this.roots = saved.roots
     this.unread = new Set(saved.unread)
@@ -60,9 +60,9 @@ export class FileActivity implements vscode.Disposable {
       } while (this.again && !this.disposed)
     })().catch((error) => {
       logOperation('refresh.failed', { error: String(error) })
-    }).finally(() => {
+    }).finally(async () => {
       this.running = undefined
-      if (!this.disposed) this.changed()
+      if (!this.disposed) await this.changed()
     })
     return this.running
   }
@@ -73,16 +73,17 @@ export class FileActivity implements vscode.Disposable {
 
   async markOpened(uris: readonly vscode.Uri[]): Promise<void> {
     let changed = false
+    let clearedMarker = false
     for (const uri of uris) {
       if (!isFileSystemUri(uri) || !Object.keys(this.roots).some((root) => isEqualOrParent(uri, vscode.Uri.parse(root)))) continue
       const key = uriKey(uri)
       if (!this.opened.has(key) || this.unread.has(key)) changed = true
       this.opened.add(key)
-      this.unread.delete(key)
+      if (this.unread.delete(key)) clearedMarker = true
     }
     if (changed) {
       this.revision++
-      this.changed()
+      if (clearedMarker) await this.changed()
       await this.persist()
     }
   }

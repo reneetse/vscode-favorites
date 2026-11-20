@@ -1,5 +1,11 @@
 <!--Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.-->
 
+### 2026-11-20 (1.17.1)
+
+1. Give each tree row an ID scoped to its parent, so moving or regrouping files cannot reuse a still-registered row ID.
+2. Batch file move updates and refresh only changed branches when the top-level rows stay the same.
+3. Restore Favorites inside Explorer and reveal active files after their move has updated the tree.
+
 ### 2026-11-20 (1.17.0)
 
 1. Default new configurations to recently modified first and refresh every 30 seconds, with a configurable interval and manual refresh.

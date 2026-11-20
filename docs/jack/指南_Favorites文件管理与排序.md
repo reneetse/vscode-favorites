@@ -1,4 +1,4 @@
-# Favorites 1.17.0 使用说明
+# Favorites 1.17.1 使用说明
 
 ## 排序
 
@@ -63,14 +63,14 @@
 
 ## 安装
 
-安装包为 `releases/vscode-favorites-1.17.0.vsix`，其他环境已克隆仓库时无需重新编译。在仓库 `master` 分支、目标 VS Code 窗口的终端中执行：
+安装包为 `releases/vscode-favorites-1.17.1.vsix`，其他环境已克隆仓库时无需重新编译。在仓库 `master` 分支、目标 VS Code 窗口的终端中执行：
 
 ```sh
 git pull --ff-only
-code --install-extension ./releases/vscode-favorites-1.17.0.vsix --force
+code --install-extension ./releases/vscode-favorites-1.17.1.vsix --force
 ```
 
-也可从扩展面板选择“从 VSIX 安装”。安装后执行 `Developer: Reload Window`，确认版本为 `1.17.0`。Remote SSH、WSL 和容器需分别安装到对应目标环境。配置格式兼容旧版本，无需迁移收藏。维护者重新打包使用 `npm run build`。
+也可从扩展面板选择“从 VSIX 安装”。安装后执行 `Developer: Reload Window`，确认版本为 `1.17.1`。Remote SSH、WSL 和容器需分别安装到对应目标环境。配置格式兼容旧版本，无需迁移收藏。维护者重新打包使用 `npm run build`。
 
 ## 验证边界
 

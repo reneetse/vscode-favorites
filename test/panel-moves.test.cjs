@@ -135,3 +135,44 @@ test('moving without a covering favorite keeps the standalone bookmark', async (
   await f.run('favorites.moveToFolder', f.item(uri))
   assert.deepEqual(f.config.resources, [{ filePath: 'target/a.md', group: 'Default' }])
 })
+
+test('moving a nested file into its parent refreshes the affected branch once and keeps the other roots', async (t) => {
+  const f = await fixture(t, { sortOrder: 'MTIME_DESC' })
+  const file = f.file('docs/jack/1231/木桩训练场伤害统计时间对齐改造设计.md')
+  f.file('docs/jack/待办_零碎代码治理.md')
+  f.file('docs/other/keep.md')
+  f.config.resources = ['docs/jack', 'docs/other', 'docs/jack/待办_零碎代码治理.md', 'docs/jack/1231/木桩训练场伤害统计时间对齐改造设计.md']
+  const provider = f.views.get('favorites').treeDataProvider
+  await provider.refresh()
+  const roots = await provider.getChildren()
+  const jack = roots.find((row) => row.label === 'jack')
+  const other = roots.find((row) => row.label === 'other')
+  const [sub] = await provider.getChildren(jack)
+  const [child] = await provider.getChildren(sub)
+  await provider.getChildren(other)
+  const refreshes = []
+  provider.onDidChangeTreeData((item) => refreshes.push(item))
+  const transfer = new Map()
+  provider.handleDrag([child], transfer, {})
+  await provider.handleDrop(jack, transfer, {})
+  assert.equal(fs.existsSync(file.fsPath), false)
+  assert.ok(fs.existsSync(path.join(f.root, 'docs/jack', child.label)))
+  assert.deepEqual(refreshes, [jack])
+  await provider.refresh()
+  assert.deepEqual(refreshes, [jack])
+})
+
+test('the same file used as a root favorite and a nested row has distinct native tree IDs', async (t) => {
+  const f = await fixture(t)
+  f.file('jack/a.md')
+  f.config.resources = ['jack', 'jack/a.md']
+  const provider = f.views.get('favorites').treeDataProvider
+  const [jack] = await provider.getChildren()
+  const [child] = await provider.getChildren(jack)
+  f.settings.filesExclude = { '**/a.md': true }
+  const roots = await provider.getChildren()
+  const separate = roots.find((item) => item.label === 'a.md')
+  assert.equal(separate.resourceUri.toString(), child.resourceUri.toString())
+  assert.notEqual(separate.id, child.id)
+  assert.equal(await provider.getParent(child), jack)
+})

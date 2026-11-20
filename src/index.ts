@@ -55,7 +55,7 @@ export function activate(context: vscode.ExtensionContext) {
     version: context.extension?.packageJSON.version || 'development',
     workspaceFolders: vscode.workspace.workspaceFolders?.map((folder) => folder.uri.toString()) || [],
   })
-  const activity = new FileActivity(context.workspaceState, () => favoritesProvider.refresh())
+  const activity = new FileActivity(context.workspaceState, (): Promise<void> => favoritesProvider.refresh())
   const favoritesProvider = new FavoritesProvider(activity)
   context.subscriptions.push(activity)
   context.subscriptions.push(onResourcesRenamed((renames) => activity.remap(renames)))
@@ -84,30 +84,53 @@ export function activate(context: vscode.ExtensionContext) {
   const autoReveal = new AutoReveal(favoritesProvider, [explorerTree, tree])
   context.subscriptions.push(autoReveal)
 
-  const updateViewLanguage = async () => {
-    await vscode.commands.executeCommand('setContext', 'ext:favoritesEnglish', getLanguage() === 'en')
-    const currentGroup = ((await configMgr.get('currentGroup')) as string) || 'Default'
-    for (const view of [explorerTree, tree]) {
-      view.title = t('Favorites')
-      view.message = t('Current Group: {0}', currentGroup)
+  let lastGroup: string | undefined
+  let lastLanguage: string | undefined
+  let hasResources: boolean | undefined
+  let viewRevision = 0
+  const updateViewState = async () => {
+    const revision = ++viewRevision
+    const [group, resources] = await Promise.all([configMgr.get('currentGroup'), configMgr.get('resources')])
+    if (revision !== viewRevision) return false
+    const currentGroup = typeof group === 'string' && group ? group : 'Default'
+    const language = getLanguage()
+    const groupChanged = lastGroup !== currentGroup
+    const languageChanged = lastLanguage !== language
+    const present = Array.isArray(resources) && resources.length > 0
+    if (present !== hasResources) {
+      hasResources = present
+      void vscode.commands.executeCommand('setContext', 'ext:favoritesHasResources', present)
     }
+    if (languageChanged) {
+      lastLanguage = language
+      void vscode.commands.executeCommand('setContext', 'ext:favoritesEnglish', language === 'en')
+    }
+    lastGroup = currentGroup
+    for (const view of [explorerTree, tree]) {
+      if (languageChanged) view.title = t('Favorites')
+      if (languageChanged || groupChanged) view.message = t('Current Group: {0}', currentGroup)
+    }
+    return groupChanged
   }
-  context.subscriptions.push(configMgr.onConfigChange(() => {
+  context.subscriptions.push(configMgr.onConfigChange(async () => {
     activity.invalidate()
-    void updateViewLanguage()
-    favoritesProvider.refresh()
-    void autoReveal.sync()
+    const groupChanged = await updateViewState()
+    await favoritesProvider.refresh()
+    if (groupChanged) await autoReveal.sync()
   }))
-  void updateViewLanguage()
+  void updateViewState()
   context.subscriptions.push(explorerTree, tree)
 
   vscode.workspace.onDidChangeConfiguration(
-    async () => {
+    async (event) => {
+      if (!event.affectsConfiguration('favorites') && !event.affectsConfiguration('files.exclude')) return
       activity.invalidate()
       activity.configure()
-      await updateViewLanguage()
-      favoritesProvider.refresh()
-      await autoReveal.sync()
+      const groupChanged = await updateViewState()
+      await favoritesProvider.refresh()
+      if (groupChanged || event.affectsConfiguration('favorites.autoReveal')) {
+        await autoReveal.sync()
+      }
     },
     undefined,
     context.subscriptions,

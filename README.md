@@ -11,7 +11,7 @@ An extension that lets the developer mark resources (files or folders) as favori
 
 ## Install
 
-For this repository's customized **1.17.0** build, install `releases/vscode-favorites-1.17.0.vsix` using **Extensions: Install from VSIX...**, then run **Developer: Reload Window**. See [the Chinese usage guide](docs/jack/指南_Favorites文件管理与排序.md). The Marketplace installation below uses the original distribution.
+For this repository's customized **1.17.1** build, install `releases/vscode-favorites-1.17.1.vsix` using **Extensions: Install from VSIX...**, then run **Developer: Reload Window**. See [the Chinese usage guide](docs/jack/指南_Favorites文件管理与排序.md). The Marketplace installation below uses the original distribution.
 
 Launch VS Code Quick Open (`cmd`/`ctrl` + `p`), paste the following command, and press Enter.
 
