@@ -125,3 +125,34 @@ test('a metadata save failure reports disk deletion separately and still clears 
   const [jack] = await provider.getChildren()
   assert.equal((await provider.getChildren(jack)).find((item) => item.label === 'new.md').iconPath?.id, 'new-file')
 })
+
+test('deleted rows are invalidated before a slow bookmarks save completes', async (t) => {
+  const f = await fixture(t, { refreshInterval: 0 })
+  const file = f.file('jack/sub/a.md')
+  f.file('jack/keep.md')
+  f.config.resources = ['jack', 'jack/sub/a.md']
+  const provider = f.views.get('favorites').treeDataProvider
+  await provider.refresh()
+  const [jack] = await provider.getChildren()
+  await provider.getChildren(jack)
+  f.input.confirm = true
+  const configuration = f.vscode.workspace.getConfiguration
+  let saving, release
+  const entered = new Promise((resolve) => { saving = resolve })
+  const gate = new Promise((resolve) => { release = resolve })
+  f.vscode.workspace.getConfiguration = (section) => {
+    const settings = configuration(section)
+    return { ...settings, update: async (key, value) => { saving(); await gate; await settings.update(key, value) } }
+  }
+  const changes = []
+  provider.onDidChangeTreeData((item) => changes.push(item))
+  const deleting = f.run('favorites.deleteFiles', f.item(Uri.file(path.dirname(file.fsPath)), true))
+  try {
+    await entered
+    assert.equal(fs.existsSync(file.fsPath), false)
+    assert.deepEqual(changes, [jack])
+  } finally {
+    release()
+    await deleting
+  }
+})

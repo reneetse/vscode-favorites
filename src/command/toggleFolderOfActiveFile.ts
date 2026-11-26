@@ -1,8 +1,8 @@
 import { t } from '../helper/i18n'
 import * as vscode from 'vscode'
-import * as path from 'path'
 import configMgr from '../helper/configMgr'
-import { getCurrentResources, isMultiRoots, getSingleRootPath, hasRoot } from '../helper/util'
+import { getCurrentResources } from '../helper/util'
+import { isFileSystemUri, newFavoritePath, parentDirectory } from '../helper/resourcePaths'
 import { DEFAULT_GROUP } from '../enum'
 
 export function toggleFolderOfActiveFile() {
@@ -16,19 +16,9 @@ export function toggleFolderOfActiveFile() {
       }
 
       const resourceUri = editor.document.uri
-      const fileName = resourceUri.fsPath
-      const folderPath = path.dirname(fileName)
-
-      // Store the stringified uri for any resource that isn't a file
-      const rootPath = getSingleRootPath()
-      const normalizedFolderPath =
-        resourceUri.scheme !== 'file'
-          ? resourceUri.toString()
-          : isMultiRoots() || !hasRoot() || !folderPath.toLowerCase().startsWith(rootPath.toLowerCase())
-            ? folderPath
-            : rootPath.endsWith('/') || rootPath.endsWith('\\')
-              ? folderPath.substr(rootPath.length)
-              : folderPath.substr(rootPath.length + 1)
+      const normalizedFolderPath = isFileSystemUri(resourceUri)
+        ? newFavoritePath(parentDirectory(resourceUri))
+        : resourceUri.toString()
 
       // Get current resources
       const resources = await getCurrentResources()

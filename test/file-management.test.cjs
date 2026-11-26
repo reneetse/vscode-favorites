@@ -42,6 +42,23 @@ test('moving a batch rejects a destination collision before moving any file', as
   assert.equal(f.messages.at(-1)[0], 'error')
 })
 
+test('a mixed batch rewrites existing favorites and adds new favorites in one settings write', async (t) => {
+  const f = await fixture(t)
+  const pinned = f.file('from/pinned.md'), child = f.file('from/child.md')
+  f.file('jack/keep.md')
+  f.input.folder = Uri.file(path.join(f.root, 'jack'))
+  f.config.resources = [{ filePath: 'from/pinned.md', group: 'Default', note: 'keep' }, 'from']
+  await f.run('favorites.moveToFolder', f.item(pinned), [f.item(pinned), f.item(child, true)])
+  assert.deepEqual(f.config.resources, [
+    { filePath: 'jack/pinned.md', group: 'Default', note: 'keep' },
+    'from',
+    { filePath: 'jack/child.md', group: 'Default' },
+  ])
+  assert.deepEqual(f.writes, ['resources'])
+  await f.rename(f.appliedEdits[0].renames)
+  assert.deepEqual(f.writes, ['resources'])
+})
+
 test('moving duplicate basenames from different directories never overwrites either file', async (t) => {
   const f = await fixture(t)
   const a = f.file('one/a.md'), b = f.file('two/a.md')
@@ -141,6 +158,22 @@ test('a runtime partial move updates favorites for files that actually moved', a
   assert.match(f.messages.at(-1)[1], /Completed 1 of 2/)
 })
 
+test('a move preserves an unreadable favorites configuration and reports the save failure', async (t) => {
+  const f = await fixture(t)
+  const file = f.file('from/a.md')
+  f.file('jack/keep.md')
+  const config = f.file('.vscfavoriterc')
+  fs.writeFileSync(config.fsPath, '{ malformed')
+  f.config.saveSeparated = true
+  f.input.folder = Uri.file(path.join(f.root, 'jack'))
+  await f.run('favorites.moveToFolder', f.item(file))
+  assert.equal(fs.readFileSync(config.fsPath, 'utf8'), '{ malformed')
+  assert.equal(fs.readFileSync(path.join(f.root, 'jack/a.md'), 'utf8'), 'from/a.md')
+  assert.equal(f.messages.at(-1)[0], 'warning')
+  assert.match(f.messages.at(-1)[1], /could not be updated/)
+  assert.doesNotMatch(f.messages.at(-1)[1], /Favorites follow their actual paths/)
+})
+
 test('external directory renames and undo update URI and relative favorites at segment boundaries', async (t) => {
   const f = await fixture(t)
   const file = f.file('jack/中文 待办.md')
@@ -153,6 +186,41 @@ test('external directory renames and undo update URI and relative favorites at s
   fs.renameSync(newUri.fsPath, oldUri.fsPath)
   await f.rename([{ oldUri: newUri, newUri: oldUri }])
   assert.deepEqual(f.config.resources, [file.toString(), 'jack/中文 待办.md', 'jack-other/a.md'])
+})
+
+test('a case-only Windows rename updates the path once even if the event arrives again', async (t) => {
+  const f = await fixture(t, {}, { platform: 'win32' })
+  const oldUri = f.file('jack/Note.md')
+  const newUri = Uri.file(path.join(f.root, 'jack/note.md'))
+  f.config.resources = ['jack/Note.md']
+  fs.renameSync(oldUri.fsPath, newUri.fsPath)
+  await f.rename([{ oldUri, newUri }])
+  await f.rename([{ oldUri, newUri }])
+  assert.deepEqual(f.config.resources, ['jack/note.md'])
+  assert.deepEqual(f.writes, ['resources'])
+})
+
+test('partial recovery keeps confirmed moves when another path cannot be inspected', async (t) => {
+  const f = await fixture(t)
+  const a = f.file('from/a.md'), b = f.file('from/b.md')
+  f.file('jack/keep.md')
+  f.input.folder = Uri.file(path.join(f.root, 'jack'))
+  f.config.resources = ['from/a.md', 'from/b.md']
+  let interrupted = false
+  f.vscode.workspace.applyEdit = async ({ renames: [, { oldUri, newUri }] }) => {
+    fs.renameSync(oldUri.fsPath, newUri.fsPath)
+    interrupted = true
+    return false
+  }
+  const stat = f.vscode.workspace.fs.stat
+  f.vscode.workspace.fs.stat = async (uri) => {
+    if (interrupted && uri.fsPath === a.fsPath) throw Object.assign(new Error('Unavailable'), { code: 'Unavailable' })
+    return stat(uri)
+  }
+  await f.run('favorites.moveToFolder', f.item(a), [f.item(a), f.item(b)])
+  assert.deepEqual(f.config.resources, ['from/a.md', 'jack/b.md'])
+  assert.deepEqual(f.writes, ['resources'])
+  assert.match(f.messages.at(-1)[1], /Some paths could not be checked/)
 })
 
 test('remote URI folder children retain the URI authority and can be moved', async (t) => {

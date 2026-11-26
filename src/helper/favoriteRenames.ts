@@ -1,9 +1,8 @@
 import * as vscode from 'vscode'
 import configMgr from './configMgr'
-import { isEqualOrParent, resourcePathToUri, serializeFavoriteUri, uriKey, isFileSystemUri, newFavoritePath } from './resourcePaths'
+import { isEqualOrParent, resourcePathToUri, serializeFavoriteUri, uriKey, newFavoritePath } from './resourcePaths'
 import type { ItemInSettingsJson } from '../model'
 import { DEFAULT_GROUP } from '../enum'
-import { logOperation } from './diagnostics'
 
 export type ResourceRename = { readonly oldUri: vscode.Uri; readonly newUri: vscode.Uri }
 
@@ -24,7 +23,8 @@ function mutateFavorites(transform: (resources: FavoriteEntry[]) => FavoriteEntr
   return operation
 }
 
-export function updateFavoritePaths(renames: readonly ResourceRename[]): Promise<void> {
+export function updateFavoritePaths(renames: readonly ResourceRename[], addToGroup?: string): Promise<void> {
+  if (!renames.length) return Promise.resolve()
   return mutateFavorites((resources) => {
     let changed = false
     const updated = resources.map((resource) => {
@@ -39,43 +39,20 @@ export function updateFavoritePaths(renames: readonly ResourceRename[]): Promise
       changed = true
       return typeof resource === 'string' ? newPath : { ...resource, filePath: newPath }
     })
+    if (addToGroup !== undefined) {
+      const present = new Set(updated
+        .filter((entry) => (typeof entry === 'string' ? DEFAULT_GROUP : entry.group) === addToGroup)
+        .map((entry) => uriKey(resourcePathToUri(typeof entry === 'string' ? entry : entry.filePath))))
+      for (const { newUri } of renames) {
+        const key = uriKey(newUri)
+        if (present.has(key)) continue
+        updated.push({ filePath: newFavoritePath(newUri), group: addToGroup })
+        present.add(key)
+        changed = true
+      }
+    }
     return changed ? updated : resources
-  }).then(() => { if (renames.length) renamed.fire(renames) })
-}
-
-export async function organizeFavoriteTargets(targets: readonly vscode.Uri[], group: string, addMissing: readonly vscode.Uri[] = targets): Promise<number> {
-  const resources = ((await configMgr.get('resources')) as FavoriteEntry[]) || []
-  const coveringFolders = new Map<string, vscode.Uri>()
-  for (const entry of resources) {
-    if ((typeof entry === 'string' ? DEFAULT_GROUP : entry.group) !== group) continue
-    const uri = resourcePathToUri(typeof entry === 'string' ? entry : entry.filePath)
-    if (!isFileSystemUri(uri) || targets.some((target) => isEqualOrParent(uri, target))) continue
-    try {
-      if ((await vscode.workspace.fs.stat(uri)).type & vscode.FileType.Directory) coveringFolders.set(uriKey(uri), uri)
-    } catch (error) {
-      logOperation('favorites.coverageUnavailable', { uri: uri.toString(), error: String(error) })
-    }
-  }
-  let organized = 0
-  const mayAdd = new Set(addMissing.map(uriKey))
-  await mutateFavorites((latest) => {
-    const current = latest.filter((entry) => (typeof entry === 'string' ? DEFAULT_GROUP : entry.group) === group)
-    const present = new Set(current.map((entry) => uriKey(resourcePathToUri(typeof entry === 'string' ? entry : entry.filePath))))
-    const folders = [...coveringFolders.values()].filter((uri) => present.has(uriKey(uri)))
-    const additions: FavoriteEntry[] = []
-    for (const target of targets) {
-      if (folders.some((folder) => isEqualOrParent(target, folder))) {
-        organized++
-      }
-      if (mayAdd.has(uriKey(target)) && !present.has(uriKey(target))) {
-        additions.push({ filePath: newFavoritePath(target), group })
-        present.add(uriKey(target))
-      }
-    }
-    return additions.length ? [...latest, ...additions] : latest
-  })
-  logOperation('favorites.organized', { group, organized, targets: targets.map((uri) => uri.toString()) })
-  return organized
+  }).finally(() => renamed.fire(renames))
 }
 
 export function removeDeletedFavorites(uris: readonly vscode.Uri[]): Promise<void> {

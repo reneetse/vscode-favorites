@@ -6,6 +6,7 @@ import configMgr from '../helper/configMgr'
 import { resourcePathToUri, serializeFavoriteUri, uriKey, isEqualOrParent } from '../helper/resourcePaths'
 import { moveResources, moveOutcomeMessage } from '../helper/fileOperations'
 import { t, getLanguage } from '../helper/i18n'
+import { logOperation } from '../helper/diagnostics'
 import { getSortOrder } from '../helper/sortOrder'
 import type { FileActivity } from '../helper/fileActivity'
 import { DEFAULT_GROUP, FileStat } from '../enum'
@@ -21,7 +22,7 @@ export class FavoritesProvider
   private branches = new Map<string, { parent?: Resource; rows: Resource[] }>()
   private pendingRefresh?: Promise<void>
   private needsRefresh = false
-  private moveInProgress = 0
+  private moveInProgress = false
   private moveCompletion?: Promise<unknown>
   private epoch = 0
 
@@ -53,16 +54,17 @@ export class FavoritesProvider
   }
 
   moveItems(uris: readonly vscode.Uri[], destination: vscode.Uri, token?: vscode.CancellationToken) {
-    this.moveInProgress++
+    if (this.moveInProgress) return Promise.reject(new Error(t('Another move is in progress. Please wait.')))
+    this.moveInProgress = true
+    this.epoch++
     const operation = moveResources(uris, destination, token).finally(async () => {
-      this.moveInProgress--
+      this.moveInProgress = false
+      const started = Date.now()
       await this.refresh()
+      logOperation('move.treeRefreshed', { elapsedMs: Date.now() - started })
+      if (this.moveCompletion === operation) this.moveCompletion = undefined
     })
-    const work = this.moveCompletion ? Promise.allSettled([this.moveCompletion, operation]) : operation
-    this.moveCompletion = work
-    void work.finally(() => {
-      if (this.moveCompletion === work) this.moveCompletion = undefined
-    }).catch(() => {})
+    this.moveCompletion = operation
     return operation
   }
 
@@ -70,11 +72,34 @@ export class FavoritesProvider
     await this.moveCompletion?.catch(() => {})
   }
 
+  removeDeletedRows(uris: readonly vscode.Uri[]): void {
+    if (!uris.length) return
+    this.epoch++
+    const removed = (row: Resource) => uris.some((uri) => isEqualOrParent(row.resourceUri, uri))
+    const changed: Resource[] = []
+    let rootsChanged = false
+    for (const [id, branch] of this.branches) {
+      if (branch.parent && removed(branch.parent)) {
+        this.branches.delete(id)
+        continue
+      }
+      const remaining = branch.rows.filter((row) => !removed(row))
+      if (remaining.length === branch.rows.length) continue
+      branch.rows = remaining
+      if (branch.parent) changed.push(branch.parent)
+      else rootsChanged = true
+    }
+    if (rootsChanged) this._onDidChangeTreeData.fire()
+    else if (changed.length) this._onDidChangeTreeData.fire(changed.length === 1 ? changed[0] : changed)
+  }
+
   private async refreshBranches(): Promise<void> {
+    const epoch = this.epoch
     const visible = [...this.branches.values()]
     const roots = visible.find(({ parent }) => !parent)
     const state = await this.readTreeState()
     const nextRoots = await this.readChildren(undefined, state)
+    if (epoch !== this.epoch) return
     if (!roots || this.updateBranch(undefined, nextRoots)) {
       this.branches.clear()
       this._onDidChangeTreeData.fire()
@@ -82,11 +107,9 @@ export class FavoritesProvider
     }
 
     const folders = visible.filter(({ parent }) => parent !== undefined)
-    const changes = await Promise.all(folders.map(async ({ parent }) => {
-      const rows = await this.readChildren(parent, state)
-      return this.updateBranch(parent, rows) ? parent : undefined
-    }))
-    const changed = changes.filter((node): node is Resource => !!node)
+    const next = await Promise.all(folders.map(async ({ parent }) => ({ parent, rows: await this.readChildren(parent, state) })))
+    if (epoch !== this.epoch) return
+    const changed = next.flatMap(({ parent, rows }) => parent && this.updateBranch(parent, rows) ? [parent] : [])
     const changedIds = new Set(changed.map((node) => node.id))
     const highest = changed.filter((node) => {
       for (let parent = node.parent; parent; parent = parent.parent) {
@@ -124,22 +147,9 @@ export class FavoritesProvider
     return element
   }
 
-  private async descend(uri: vscode.Uri, root: Resource, state: Awaited<ReturnType<FavoritesProvider['readTreeState']>>, epoch: number): Promise<Resource | undefined> {
-    if (!isEqualOrParent(uri, root.resourceUri)) return
-    let current = root
-    const segments = uri.path.slice(root.resourceUri.path.replace(/\/+$/, '').length).split('/').filter(Boolean)
-    for (const segment of segments) {
-      if (epoch !== this.epoch) return
-      const nextUri = vscode.Uri.joinPath(current.resourceUri, segment)
-      const entries = await this.listDirectory(current.resourceUri).catch(() => [])
-      if (epoch !== this.epoch) return
-      if (!entries.some(([name]) => uriKey(vscode.Uri.joinPath(current.resourceUri, name)) === uriKey(nextUri))) return
-      const item = await this.getResourceStat({ filePath: serializeFavoriteUri(nextUri, current.value), group: '' })
-      if (epoch !== this.epoch || item.stat === FileStat.NEITHER) return
-      const context = state.pinned.has(uriKey(nextUri)) ? 'resourceChild.pinned' : 'resourceChild'
-      current = this.createResource(item, context, undefined, current)
-    }
-    return current
+  private existingRow(row: Resource): Resource {
+    const existing = this.branches.get(row.parent?.id || '')?.rows.find((entry) => entry.id === row.id)
+    return existing?.parent === row.parent && existing?.presentationKey() === row.presentationKey() ? existing : row
   }
 
   async findResource(uri: vscode.Uri): Promise<Resource | undefined> {
@@ -149,12 +159,16 @@ export class FavoritesProvider
       const roots = await this.readChildren(undefined, state)
       if (epoch !== this.epoch) continue
       const exact = roots.find((root) => uriKey(root.resourceUri) === uriKey(uri))
-      if (exact) return exact
+      if (exact) return this.existingRow(exact)
       const candidates = roots.filter((root) => root.contextValue.endsWith('.dir') && isEqualOrParent(uri, root.resourceUri))
         .sort((a, b) => b.resourceUri.path.length - a.resourceUri.path.length)
       for (const root of candidates) {
-        const resource = await this.descend(uri, root, state, epoch)
-        if (resource) return resource
+        let current: Resource | undefined = this.existingRow(root)
+        while (current && epoch === this.epoch) {
+          const [child] = await this.readChildren(current, state, uri)
+          current = child && this.existingRow(child)
+          if (current && epoch === this.epoch && uriKey(current.resourceUri) === uriKey(uri)) return current
+        }
         if (epoch !== this.epoch) break
       }
       if (epoch === this.epoch) return
@@ -181,10 +195,14 @@ export class FavoritesProvider
     return this.branches.get(element?.id || '')!.rows
   }
 
-  private async readChildren(element: Resource | undefined, state: Awaited<ReturnType<FavoritesProvider['readTreeState']>>): Promise<Resource[]> {
+  private async readChildren(
+    element: Resource | undefined,
+    state: Awaited<ReturnType<FavoritesProvider['readTreeState']>>,
+    target?: vscode.Uri,
+  ): Promise<Resource[]> {
     const { resources, sort, pinned } = state
     if (element) {
-      const children = await this.getChildrenResources(element, sort)
+      const children = await this.getChildrenResources(element, sort, target)
       for (const child of children) {
         if (pinned.has(uriKey(child.resourceUri))) child.contextValue = child.contextValue.replace(/(\.dir)?$/, '.pinned$1')
       }
@@ -270,15 +288,20 @@ export class FavoritesProvider
     })
   }
 
-  private async getChildrenResources(parent: Resource, sort: string): Promise<Resource[]> {
+  private async getChildrenResources(parent: Resource, sort: string, target?: vscode.Uri): Promise<Resource[]> {
     const uri = parent.resourceUri
     try {
       const entries = await this.listDirectory(uri)
-      const resources = entries.map(([name]) => ({
-        filePath: serializeFavoriteUri(vscode.Uri.joinPath(uri, name), parent.value),
-        group: '',
+      const items = await Promise.all(entries.flatMap(([name, type]): (Item | Thenable<Item>)[] => {
+        const child = vscode.Uri.joinPath(uri, name)
+        if (target && !isEqualOrParent(target, child)) return []
+        const item = { filePath: serializeFavoriteUri(child, parent.value), group: '' }
+        if (target || sort.startsWith('MTIME_') || (type !== vscode.FileType.File && type !== vscode.FileType.Directory)) {
+          return [this.getResourceStat(item)]
+        }
+        return [{ ...item, uri: child, stat: type === vscode.FileType.Directory ? FileStat.DIRECTORY : FileStat.FILE }]
       }))
-      const items = await this.sortResources(resources, sort === 'MANUAL' ? 'ASC' : sort)
+      this.sortItems(items, sort === 'MANUAL' ? 'ASC' : sort)
       return this.data2Resource(items.filter((item) => item.stat !== FileStat.NEITHER), 'resourceChild', parent)
     } catch {
       return []
@@ -350,6 +373,10 @@ export class FavoritesProvider
 
   private async sortResources(resources: Array<ItemInSettingsJson>, sort: string): Promise<Array<Item>> {
     const items = await Promise.all(resources.map((resource) => this.getResourceStat(resource)))
+    return this.sortItems(items, sort)
+  }
+
+  private sortItems(items: Item[], sort: string): Item[] {
     if (sort === 'MANUAL') return items
     const collator = new Intl.Collator(getLanguage(), { numeric: true, sensitivity: 'base' })
     return items.sort((a, b) => {
@@ -510,9 +537,11 @@ export class FavoritesProvider
     dataTransfer: vscode.DataTransfer,
     token: vscode.CancellationToken,
   ): void {
+    const paths = source.map((item) => item.resourceUri.toString())
+    logOperation('drag.started', { sources: paths })
     dataTransfer.set(
       FAVORITES_MIME,
-      new vscode.DataTransferItem(JSON.stringify(source.map((item) => item.resourceUri.toString()))),
+      new vscode.DataTransferItem(JSON.stringify(paths)),
     )
   }
 
@@ -522,6 +551,7 @@ export class FavoritesProvider
     token: vscode.CancellationToken,
   ): Promise<void> {
     try {
+      logOperation('drop.received', { target: target?.resourceUri.toString(), context: target?.contextValue, internal: !!source.get(FAVORITES_MIME) })
       let sourcePaths: string[] = []
 
       // Check if dragging from within favorites (internal drag)
@@ -606,8 +636,6 @@ export class FavoritesProvider
       // Set sort order to MANUAL when drag and drop occurs
       await configMgr.save('sortOrder', 'MANUAL')
 
-      // Refresh the tree view
-      this.refresh()
       if (!resourceData && target?.contextValue.endsWith('.dir')) {
         vscode.window.showInformationMessage(t('Added favorites. To move files, select them in Favorites and use Move to Folder.'))
       }

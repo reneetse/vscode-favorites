@@ -51,6 +51,19 @@ test('copy commands handle remote filesystem paths and preserve web URIs', async
   ])
 })
 
+test('relative copy uses each workspace folder and keeps external paths and URLs intact', async (t) => {
+  const f = await fixture(t)
+  const second = f.addRepository('second')
+  f.vscode.workspace.workspaceFolders.push({ uri: second.rootUri })
+  const firstFile = f.file('docs/中文 待办.md')
+  const secondFile = f.file('readme.md', second)
+  const external = f.file('../outside.md')
+  const web = Uri.parse('https://example.com/note?version=2#section')
+  const targets = [firstFile, secondFile, external, web, firstFile].map((uri) => f.item(uri))
+  await f.run('favorites.localized.en.copyRelativePath', targets[0], targets)
+  assert.deepEqual(f.copied, [['docs/中文 待办.md', 'readme.md', external.fsPath, web.toString()].join(os.EOL)])
+})
+
 test('copying an unselected target ignores the previous selection', async (t) => {
   const f = await fixture(t)
   const target = f.item(f.file('target.md'))
@@ -187,7 +200,64 @@ test('batch open keeps all selected files as non-preview tabs', async (t) => {
     b = f.item(f.file('b.md'))
   await f.run('favorites.openToSide', a, [a, b])
   assert.equal(f.opened.length, 2)
-  assert.ok(f.opened.every(([, options]) => !options.preview && options.preserveFocus))
+  assert.ok(f.opened.every(([, options]) => !options.preview && options.preserveFocus && options.viewColumn === -2))
+})
+
+test('clicking a favorite opens a preview and double-clicking pins the tab', async (t) => {
+  const f = await fixture(t)
+  const file = f.file('note.md')
+  f.config.resources = ['note.md']
+  const [item] = await f.views.get('favorites').treeDataProvider.getChildren()
+  await f.run(item.command.command, ...item.command.arguments)
+  await f.run(item.command.command, ...item.command.arguments)
+  assert.equal(f.opened[0][0].toString(), file.toString())
+  assert.deepEqual(f.opened.map(([, options]) => options.preview), [true, false])
+})
+
+test('active file and its parent folder can be favorited and unfavorited separately', async (t) => {
+  const f = await fixture(t)
+  const file = f.file('docs/note.md')
+  await f.run('favorites.toggleFavorite')
+  assert.deepEqual(f.writes, [])
+  await f.activateEditor(file)
+  await f.run('favorites.toggleFavorite')
+  await f.run('favorites.toggleFolderOfActiveFile')
+  assert.deepEqual(f.config.resources.map(({ filePath }) => filePath), ['docs/note.md', 'docs'])
+  await f.run('favorites.toggleFavorite')
+  assert.deepEqual(f.config.resources, [{ filePath: 'docs', group: 'Default' }])
+  await f.run('favorites.toggleFolderOfActiveFile')
+  assert.deepEqual(f.config.resources, [])
+  assert.ok(fs.existsSync(file.fsPath))
+})
+
+test('toggling the folder of an SSH file stores the directory URI and its authority', async (t) => {
+  const f = await fixture(t)
+  const file = f.file('docs/note.md')
+  const remote = Uri.parse('vscode-remote://ssh-remote+dev' + file.path)
+  await f.activateEditor(remote)
+  await f.run('favorites.toggleFolderOfActiveFile')
+  assert.deepEqual(f.config.resources, [{ filePath: 'vscode-remote://ssh-remote+dev' + path.posix.dirname(file.path), group: 'Default' }])
+  await f.run('favorites.toggleFolderOfActiveFile')
+  assert.deepEqual(f.config.resources, [])
+})
+
+test('Explorer and platform reveal commands forward the selected resource', async (t) => {
+  const f = await fixture(t)
+  const uri = f.file('note.md')
+  const row = f.item(uri)
+  await f.run('favorites.revealInSideBar', row)
+  for (const platform of ['mac', 'windows', 'other']) await f.run('favorites.revealInOS.' + platform, row)
+  assert.deepEqual(f.nativeReveals, [
+    ['revealInExplorer', uri], ['revealFileInOS', uri], ['revealFileInOS', uri], ['revealFileInOS', uri],
+  ])
+})
+
+test('all contributed commands are registered and diagnostics opens the Favorites output', async (t) => {
+  const f = await fixture(t)
+  const registered = new Set(f.commandIds())
+  for (const { command } of require('../package.json').contributes.commands) assert.ok(registered.has(command), command)
+  await f.run('favorites.showDiagnostics')
+  assert.deepEqual(f.diagnostics.at(-1), ['show', 'Favorites'])
 })
 
 test('normal staging respects ignores, literal filenames and reports partial failure', async (t) => {

@@ -5,7 +5,8 @@ import { isMultiRoots, getSingleRootPath } from './util'
 import { ItemInSettingsJson } from '../model'
 
 class ConfigMgr {
-  eventEmitter: vscode.EventEmitter<void> = new vscode.EventEmitter<void>()
+  private readonly changed = new vscode.EventEmitter<string>()
+  readonly onConfigChange = this.changed.event
 
   async get(key: string): Promise<Array<ItemInSettingsJson | string> | string | undefined> {
     const config = vscode.workspace.getConfiguration('favorites')
@@ -24,12 +25,11 @@ class ConfigMgr {
 
     if (isMultiRoots() || !useSeparate) {
       await config.update(key, value, false)
-      this.eventEmitter.fire()
       return
     }
 
     await this.writeToSeparateFile(key, value)
-    this.eventEmitter.fire()
+    this.changed.fire(key)
   }
 
   private async readFromSeparateFile(key: string): Promise<any> {
@@ -53,8 +53,12 @@ class ConfigMgr {
       try {
         const content = await vscode.workspace.fs.readFile(uri)
         config = JSON.parse(content.toString())
+        if (!config || typeof config !== 'object' || Array.isArray(config)) {
+          throw new Error('.vscfavoriterc must contain a JSON object')
+        }
       } catch (error) {
-        // File doesn't exist or is invalid, create a new one
+        const code = (error as { code?: string }).code
+        if (code !== 'FileNotFound' && code !== 'ENOENT') throw error
       }
 
       config[key] = value
@@ -66,9 +70,6 @@ class ConfigMgr {
     }
   }
 
-  get onConfigChange(): vscode.Event<void> {
-    return this.eventEmitter.event
-  }
 }
 
 export default new ConfigMgr()

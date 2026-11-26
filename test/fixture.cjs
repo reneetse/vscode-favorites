@@ -87,10 +87,14 @@ async function fixture(t, overrides = {}, options = {}) {
   const messages = []
   const writes = []
   const opened = []
+  const nativeReveals = []
   const copied = []
   const failures = []
   const contexts = new Map()
   const configurationListeners = []
+  const notifyConfiguration = (key) => Promise.all(configurationListeners.map((listener) => listener({
+    affectsConfiguration: (section) => section === 'favorites' || section === 'favorites.' + key,
+  })))
   const renameListeners = []
   const appliedEdits = []
   const input = { name: undefined, folder: undefined, pick: undefined, confirm: undefined }
@@ -140,17 +144,28 @@ async function fixture(t, overrides = {}, options = {}) {
       renames = []
       renameFile(oldUri, newUri, options) { this.renames.push({ oldUri, newUri, options }) }
     },
-    env: { clipboard: { writeText: async (text) => copied.push(text) } },
+    env: { language: 'en', clipboard: { writeText: async (text) => copied.push(text) } },
     workspace: {
       workspaceFolders: [{ uri: Uri.file(root) }],
-      asRelativePath: (uri) => path.relative(root, uri.fsPath),
+      asRelativePath: (uri, includeWorkspaceFolder) => {
+        const roots = vscode.workspace.workspaceFolders || []
+        for (const { uri: folder } of roots) {
+          if (uri.scheme !== folder.scheme || uri.authority !== folder.authority) continue
+          const relative = path.relative(folder.fsPath, uri.fsPath)
+          if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) continue
+          return includeWorkspaceFolder && roots.length > 1 ? path.join(path.basename(folder.fsPath), relative) : relative
+        }
+        return uri.fsPath
+      },
       getConfiguration: (section) => ({
-        get: (key, fallback) =>
-          section === 'favorites' ? structuredClone(config[key] ?? fallback)
-            : section === 'files' && key === 'exclude' ? structuredClone(settings.filesExclude) : fallback,
+          get: (key, fallback) =>
+            section === 'favorites' ? structuredClone(config[key] ?? fallback)
+              : section === 'files' && key === 'exclude' ? structuredClone(settings.filesExclude)
+                : section === 'workbench.editor' && key === 'enablePreview' ? true : fallback,
         update: async (key, value) => {
           writes.push(key)
           config[key] = structuredClone(value)
+          void notifyConfiguration(key)
         },
       }),
       onDidChangeConfiguration: (listener) => { configurationListeners.push(listener); return { dispose() {} } },
@@ -196,9 +211,9 @@ async function fixture(t, overrides = {}, options = {}) {
       visibleTextEditors: [],
       onDidChangeVisibleTextEditors: (listener) => { visibleEditorListeners.push(listener); return { dispose() {} } },
       onDidChangeActiveTextEditor: (listener) => { activeEditorListeners.push(listener); return { dispose() {} } },
-      createOutputChannel: () => ({
+      createOutputChannel: (name) => ({
         info: (...args) => diagnostics.push(args), warn: (...args) => diagnostics.push(args),
-        error: (...args) => diagnostics.push(args), show() {}, dispose() {},
+        error: (...args) => diagnostics.push(args), show: () => diagnostics.push(['show', name]), dispose() {},
       }),
       showInformationMessage: async (message) => {
         messages.push(['info', message])
@@ -233,6 +248,7 @@ async function fixture(t, overrides = {}, options = {}) {
       executeCommand: async (id, ...args) => {
         if (handlers.has(id)) return handlers.get(id)(...args)
         if (id === 'vscode.open') opened.push(args)
+        if (id === 'revealInExplorer' || id === 'revealFileInOS') nativeReveals.push([id, ...args])
         if (id === 'setContext') contexts.set(args[0], args[1])
       },
     },
@@ -289,6 +305,8 @@ async function fixture(t, overrides = {}, options = {}) {
     writes,
     messages,
     opened,
+    nativeReveals,
+    commandIds: () => [...handlers.keys()],
     copied,
     vscode,
     repository,
@@ -324,7 +342,7 @@ async function fixture(t, overrides = {}, options = {}) {
     rename: async (files) => Promise.all(renameListeners.map((listener) => listener({ files }))),
     changeConfig: async (key, value) => {
       config[key] = value
-      await Promise.all(configurationListeners.map((listener) => listener({ affectsConfiguration: (section) => section === 'favorites' || section === 'favorites.' + key })))
+      await notifyConfiguration(key)
     },
   }
 }

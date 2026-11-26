@@ -4,6 +4,68 @@ const path = require('node:path')
 const { test } = require('node:test')
 const { fixture, Uri } = require('./fixture.cjs')
 
+test('changing groups in VS Code settings registers the new group command', async (t) => {
+  const f = await fixture(t)
+  const file = f.file('note.md')
+  await f.changeConfig('groups', ['Default', 'Reviews'])
+  await f.run('favorites.addToFavorites.Reviews', file)
+  assert.deepEqual(f.config.resources, [{ filePath: 'note.md', group: 'Reviews' }])
+})
+
+test('create and switch group commands show only the selected group bookmarks', async (t) => {
+  const f = await fixture(t)
+  const file = f.file('review.md')
+  f.file('default.md')
+  f.config.resources = ['default.md']
+  f.vscode.window.showQuickPick = async (items) => items.find((item) => item === 'Input new group name')
+  f.input.name = 'Reviews'
+  await f.run('favorites.group.newGroup')
+  assert.deepEqual(f.config.groups, ['Default', 'Other', 'Reviews'])
+  assert.equal(f.config.currentGroup, 'Reviews')
+  await f.run('favorites.addToFavorites.Reviews', file)
+  const provider = f.views.get('favorites').treeDataProvider
+  assert.deepEqual(Array.from(await provider.getChildren(), (row) => row.label), ['review.md'])
+  f.vscode.window.showQuickPick = async (items) => items.find((item) => item === 'Default')
+  await f.run('favorites.group.changeGroup')
+  assert.equal(f.config.currentGroup, 'Default')
+  assert.deepEqual(Array.from(await provider.getChildren(), (row) => row.label), ['default.md'])
+})
+
+test('file type sort groups equal extensions after directories', async (t) => {
+  const f = await fixture(t, { sortOrder: 'FILETYPE' })
+  for (const name of ['a.ts', 'z.MD', 'b.md', 'notes/keep.txt']) f.file(name)
+  f.config.resources = ['a.ts', 'z.MD', 'b.md', 'notes']
+  const provider = f.views.get('favorites').treeDataProvider
+  assert.deepEqual(Array.from(await provider.getChildren(), (row) => row.label), ['notes', 'b.md', 'z.MD', 'a.ts'])
+})
+
+test('folder refresh in manual order does not stat every listed child', async (t) => {
+  const f = await fixture(t, { refreshInterval: 0 })
+  await f.views.get('favorites').treeDataProvider.refresh()
+  const file = f.file('jack/note.md')
+  f.file('jack/sub/keep.md')
+  f.config.resources = ['jack']
+  const provider = f.views.get('favorites').treeDataProvider
+  const [jack] = await provider.getChildren()
+  const stat = f.vscode.workspace.fs.stat
+  const inspected = []
+  f.vscode.workspace.fs.stat = async (uri) => { inspected.push(uri.fsPath); return stat(uri) }
+  assert.deepEqual(Array.from(await provider.getChildren(jack), (row) => row.label), ['sub', 'note.md'])
+  assert.ok(!inspected.includes(file.fsPath))
+  assert.ok(!inspected.includes(path.join(f.root, 'jack/sub')))
+})
+
+test('auto language follows the VS Code locale in both views', async (t) => {
+  const f = await fixture(t)
+  f.vscode.env.language = 'zh-cn'
+  await f.changeConfig('language', 'auto')
+  assert.ok([...f.treeViews.values()].every((view) => view.title === '收藏'))
+  f.vscode.env.language = 'en-gb'
+  await f.changeConfig('language', 'en')
+  await f.changeConfig('language', 'auto')
+  assert.ok([...f.treeViews.values()].every((view) => view.title === 'Favorites'))
+})
+
 test('modified-time sorting works in both directions with folders first', async (t) => {
   const f = await fixture(t)
   const older = f.file('a.md'), newer = f.file('b.md')

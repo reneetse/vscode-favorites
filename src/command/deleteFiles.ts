@@ -24,14 +24,13 @@ async function inspectTarget(uri: vscode.Uri): Promise<DeleteTarget> {
   if (uri.scheme !== 'file') throw new Error(t('Delete requires a file on this VS Code host. Use Explorer for virtual or remote-provider URIs.'))
   const logicalRoots = [vscode.Uri.file(homedir()), ...(vscode.workspace.workspaceFolders || []).map((folder) => folder.uri)]
   protectRoot(uri, logicalRoots)
-  const physicalRoots: vscode.Uri[] = []
-  for (const root of logicalRoots) {
-    if (root.scheme === 'file') physicalRoots.push(vscode.Uri.file(await realpath(root.fsPath)))
-  }
-  const stat = await lstat(uri.fsPath)
+  const [stat, physical, physicalRoots] = await Promise.all([
+    lstat(uri.fsPath),
+    realpath(uri.fsPath),
+    Promise.all(logicalRoots.filter((root) => root.scheme === 'file').map(async (root) => vscode.Uri.file(await realpath(root.fsPath)))),
+  ])
   if (stat.isSymbolicLink()) throw new Error(t('Deleting symbolic links is not supported here. Use Explorer.'))
   if (!stat.isFile() && !stat.isDirectory()) throw new Error(t('Only regular files and folders can be deleted.'))
-  const physical = await realpath(uri.fsPath)
   protectRoot(vscode.Uri.file(physical), physicalRoots)
   const actual = await lstat(physical)
   if (actual.dev !== stat.dev || actual.ino !== stat.ino) throw new Error(t('The selected item changed. Review it and try again.'))
@@ -73,6 +72,7 @@ async function deleteOne(target: DeleteTarget): Promise<boolean> {
 
 export function deleteFiles(provider: FavoritesProvider) {
   return vscode.commands.registerCommand('favorites.deleteFiles', async (value?: Resource | vscode.Uri, selected?: readonly (Resource | vscode.Uri)[]) => {
+    const started = Date.now()
     try {
       if (!value) return vscode.window.showWarningMessage(t('You have to choose a resource first'))
       const uris = [...new Map(getSelectedUris(value, selected).map((uri) => [uriKey(uri), uri])).values()]
@@ -80,6 +80,7 @@ export function deleteFiles(provider: FavoritesProvider) {
       const items = await Promise.all(uris.map(inspectTarget))
       const roots = items.filter(({ uri }) => !items.some((other) => other.uri !== uri && other.directory && isEqualOrParent(uri, other.uri)))
       const confirm = t('Delete')
+      logOperation('delete.confirmationRequested', { count: roots.length, preflightMs: Date.now() - started })
       const answer = await vscode.window.showWarningMessage(t('Delete {0} selected item(s) from disk?', roots.length), {
         modal: true, detail: roots.map(({ uri }) => uri.fsPath).join('\n') + '\n' + t('Folders include all their contents. Favorites alone will not be removed.'),
       }, confirm)
@@ -87,10 +88,15 @@ export function deleteFiles(provider: FavoritesProvider) {
       const completed: vscode.Uri[] = []
       const failures: string[] = []
       for (const target of roots) {
+        const deleting = Date.now()
         logOperation('delete.request', { uri: target.uri.toString(), useTrash: true })
         try {
-          if (await deleteOne(target)) completed.push(target.uri)
+          if (await deleteOne(target)) {
+            completed.push(target.uri)
+            provider.removeDeletedRows([target.uri])
+          }
         } catch (error) { failures.push(`${target.uri.fsPath}: ${String(error)}`) }
+        logOperation('delete.processed', { uri: target.uri.toString(), elapsedMs: Date.now() - deleting })
       }
       let cleanupError = ''
       try { await removeDeletedFavorites(completed) }

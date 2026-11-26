@@ -5,6 +5,8 @@ import { FavoritesProvider } from './provider/FavoritesProvider'
 import { GroupCommandProvider } from './provider/GroupCommandProvider'
 import configMgr from './helper/configMgr'
 import { updateFavoritePaths, onResourcesRenamed, onResourcesDeleted } from './helper/favoriteRenames'
+import { externalRenames } from './helper/fileOperations'
+import { isEqualOrParent } from './helper/resourcePaths'
 import { t, getLanguage } from './helper/i18n'
 import { registerLocalizedCommands } from './helper/localizedCommands'
 import { initializeDiagnostics, logOperation } from './helper/diagnostics'
@@ -58,7 +60,6 @@ export function activate(context: vscode.ExtensionContext) {
   const activity = new FileActivity(context.workspaceState, (): Promise<void> => favoritesProvider.refresh())
   const favoritesProvider = new FavoritesProvider(activity)
   context.subscriptions.push(activity)
-  context.subscriptions.push(onResourcesRenamed((renames) => activity.remap(renames)))
   context.subscriptions.push(onResourcesDeleted((uris) => activity.remove(uris)))
   context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(async (editors) => {
     await activity.markOpened(editors.map((editor) => editor.document.uri))
@@ -83,6 +84,13 @@ export function activate(context: vscode.ExtensionContext) {
   })
   const autoReveal = new AutoReveal(favoritesProvider, [explorerTree, tree])
   context.subscriptions.push(autoReveal)
+  context.subscriptions.push(onResourcesRenamed((renames) => {
+    activity.remap(renames)
+    const uri = vscode.window.activeTextEditor?.document.uri
+    if (uri && renames.some(({ newUri }) => isEqualOrParent(uri, newUri))) {
+      void favoritesProvider.refresh().then(() => autoReveal.sync())
+    }
+  }))
 
   let lastGroup: string | undefined
   let lastLanguage: string | undefined
@@ -91,7 +99,7 @@ export function activate(context: vscode.ExtensionContext) {
   const updateViewState = async () => {
     const revision = ++viewRevision
     const [group, resources] = await Promise.all([configMgr.get('currentGroup'), configMgr.get('resources')])
-    if (revision !== viewRevision) return false
+    if (revision !== viewRevision) return
     const currentGroup = typeof group === 'string' && group ? group : 'Default'
     const language = getLanguage()
     const groupChanged = lastGroup !== currentGroup
@@ -110,28 +118,27 @@ export function activate(context: vscode.ExtensionContext) {
       if (languageChanged) view.title = t('Favorites')
       if (languageChanged || groupChanged) view.message = t('Current Group: {0}', currentGroup)
     }
-    return groupChanged
   }
-  context.subscriptions.push(configMgr.onConfigChange(async () => {
-    activity.invalidate()
-    const groupChanged = await updateViewState()
-    await favoritesProvider.refresh()
-    if (groupChanged) await autoReveal.sync()
-  }))
+  const configChanged = async (affects: (key: string) => boolean) => {
+    const backend = affects('favorites.saveSeparated')
+    const resources = backend || affects('favorites.resources')
+    const group = backend || affects('favorites.currentGroup')
+    const language = affects('favorites.language')
+    if (resources) activity.invalidate()
+    if (affects('favorites.refreshInterval')) activity.configure()
+    if (backend || affects('favorites.groups')) await groupCommandProvider.updateGroupCommands()
+    if (resources || group || language) await updateViewState()
+    if (resources || group || language || affects('favorites.sortOrder') || affects('files.exclude')) {
+      await favoritesProvider.refresh()
+    }
+    if (group || affects('favorites.autoReveal')) await autoReveal.sync()
+  }
+  context.subscriptions.push(configMgr.onConfigChange((key) => configChanged((section) => section === `favorites.${key}`)))
   void updateViewState()
   context.subscriptions.push(explorerTree, tree)
 
   vscode.workspace.onDidChangeConfiguration(
-    async (event) => {
-      if (!event.affectsConfiguration('favorites') && !event.affectsConfiguration('files.exclude')) return
-      activity.invalidate()
-      activity.configure()
-      const groupChanged = await updateViewState()
-      await favoritesProvider.refresh()
-      if (groupChanged || event.affectsConfiguration('favorites.autoReveal')) {
-        await autoReveal.sync()
-      }
-    },
+    (event) => configChanged((key) => event.affectsConfiguration(key)),
     undefined,
     context.subscriptions,
   )
@@ -144,8 +151,10 @@ export function activate(context: vscode.ExtensionContext) {
   // Listen for file rename events to update favorites
   vscode.workspace.onDidRenameFiles(
     async (event) => {
+      const renames = externalRenames(event.files)
+      if (!renames.length) return
       try {
-        await updateFavoritePaths(event.files)
+        await updateFavoritePaths(renames)
       } catch (error) {
         console.error('Error updating favorites after rename:', error)
         vscode.window.showErrorMessage(t('Failed to update favorites after rename: {0}', (error as Error).message))
@@ -183,7 +192,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(moveToTop(favoritesProvider))
   context.subscriptions.push(moveToBottom(favoritesProvider))
   context.subscriptions.push(refresh(favoritesProvider, activity))
-  context.subscriptions.push(toggleSort(favoritesProvider))
+  context.subscriptions.push(toggleSort())
   context.subscriptions.push(changeGroup(favoritesProvider))
   context.subscriptions.push(addNewGroup(favoritesProvider))
 }

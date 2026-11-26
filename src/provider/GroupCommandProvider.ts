@@ -6,34 +6,22 @@ import { addFavoriteUris } from '../helper/util'
 
 export class GroupCommandProvider implements vscode.Disposable {
   private disposables: vscode.Disposable[] = []
-  private isUpdating = false
+  private revision = 0
 
   constructor() {
-    // Register command dynamic provider
-    this.updateGroupCommands()
-
-    // Listen for group changes
-    configMgr.onConfigChange(() => {
-      this.updateGroupCommands()
-    })
+    void this.updateGroupCommands()
   }
 
-  private async updateGroupCommands() {
-    // Prevent concurrent updates
-    if (this.isUpdating) {
-      return
-    }
-
+  async updateGroupCommands() {
+    const revision = ++this.revision
     try {
-      this.isUpdating = true
+      const value = await configMgr.get('groups')
+      if (revision !== this.revision) return
+      const groups = Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 
       // Clear existing disposables
       this.disposables.forEach((d) => d.dispose())
       this.disposables = []
-
-      // Get current groups
-      const value = await configMgr.get('groups')
-      const groups = Array.isArray(value) ? value.filter((item: any) => typeof item === 'string') : []
 
       if (groups && groups.length > 0) {
         for (const group of groups) {
@@ -70,12 +58,11 @@ export class GroupCommandProvider implements vscode.Disposable {
       }
     } catch (error) {
       console.error('Error updating group commands:', error)
-    } finally {
-      this.isUpdating = false
     }
   }
 
   dispose() {
+    this.revision++
     this.disposables.forEach((d) => d.dispose())
   }
 }

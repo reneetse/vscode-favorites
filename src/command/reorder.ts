@@ -40,7 +40,6 @@ export function registerReorder(
       const updated = resources.map((entry, index) => used.has(index) ? ordered[next++] : entry)
       await configMgr.save('resources', updated)
       await configMgr.save('sortOrder', 'MANUAL')
-      provider.refresh()
     } catch (error) {
       console.error('Error reordering favorites:', error)
       vscode.window.showErrorMessage(t('Failed to reorder favorites: {0}', (error as Error).message))

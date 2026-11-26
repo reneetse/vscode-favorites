@@ -1,11 +1,10 @@
 import * as vscode from 'vscode'
 
-import type { FavoritesProvider } from '../provider/FavoritesProvider'
 import configMgr from '../helper/configMgr'
 import { t } from '../helper/i18n'
 import { getSortOrder } from '../helper/sortOrder'
 
-export function toggleSort(provider: FavoritesProvider) {
+export function toggleSort() {
   return vscode.commands.registerCommand('favorites.nav.sort', async () => {
     const current = await getSortOrder()
     const choices = [
@@ -19,6 +18,5 @@ export function toggleSort(provider: FavoritesProvider) {
     const choice = await vscode.window.showQuickPick(choices, { title: t('Choose a sort order') })
     if (!choice) return
     await configMgr.save('sortOrder', choice.value)
-    provider.refresh()
   })
 }

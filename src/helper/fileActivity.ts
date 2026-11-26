@@ -89,15 +89,23 @@ export class FileActivity implements vscode.Disposable {
   }
 
   remap(renames: readonly ResourceRename[]): void {
-    this.revision++
+    let changed = false
     const remap = (key: string) => {
       const uri = vscode.Uri.parse(key)
       const rename = renames.find(({ oldUri }) => isEqualOrParent(uri, oldUri))
-      return rename ? uriKey(rename.newUri.with({ path: rename.newUri.path.replace(/\/+$/, '') + uri.path.slice(rename.oldUri.path.replace(/\/+$/, '').length) })) : key
+      if (!rename) return key
+      const next = uriKey(rename.newUri.with({ path: rename.newUri.path.replace(/\/+$/, '') + uri.path.slice(rename.oldUri.path.replace(/\/+$/, '').length) }))
+      if (next !== key) changed = true
+      return next
     }
-    this.roots = Object.fromEntries(Object.entries(this.roots).map(([key, files]) => [remap(key), files.map(remap)]))
-    this.unread = new Set([...this.unread].map(remap))
-    this.opened = new Set([...this.opened].map(remap))
+    const roots = Object.fromEntries(Object.entries(this.roots).map(([key, files]) => [remap(key), files.map(remap)]))
+    const unread = [...this.unread].map(remap)
+    const opened = [...this.opened].map(remap)
+    if (!changed) return
+    this.revision++
+    this.roots = roots
+    this.unread = new Set(unread)
+    this.opened = new Set(opened)
     void this.persist()
   }
 

@@ -176,3 +176,97 @@ test('the same file used as a root favorite and a nested row has distinct native
   assert.notEqual(separate.id, child.id)
   assert.equal(await provider.getParent(child), jack)
 })
+
+test('a refresh already reading the tree waits for the move before publishing changes', async (t) => {
+  const f = await fixture(t, { refreshInterval: 0 })
+  const file = f.file('jack/1231/note.md')
+  f.config.resources = ['jack']
+  const provider = f.views.get('favorites').treeDataProvider
+  await provider.refresh()
+  const [jack] = await provider.getChildren()
+  await provider.getChildren(jack)
+  f.file('jack/added.md')
+
+  const updates = []
+  provider.onDidChangeTreeData((row) => updates.push(row))
+  let entered, releaseRead, edited, releaseEdit
+  const reading = new Promise((resolve) => { entered = resolve })
+  const readGate = new Promise((resolve) => { releaseRead = resolve })
+  const onDisk = new Promise((resolve) => { edited = resolve })
+  const editGate = new Promise((resolve) => { releaseEdit = resolve })
+  const stat = f.vscode.workspace.fs.stat
+  let blocked = false
+  f.vscode.workspace.fs.stat = async (uri) => {
+    if (!blocked && uri.fsPath === jack.resourceUri.fsPath) {
+      blocked = true
+      entered()
+      await readGate
+    }
+    return stat(uri)
+  }
+  f.vscode.workspace.applyEdit = async ({ renames: [{ oldUri, newUri }] }) => {
+    fs.renameSync(oldUri.fsPath, newUri.fsPath)
+    edited()
+    await editGate
+    return true
+  }
+  const previous = provider.refresh()
+  await reading
+  const moving = f.run('favorites.moveToParentFolder', f.item(file, true))
+  try {
+    await onDisk
+    releaseRead()
+    await previous
+    assert.deepEqual(updates, [])
+  } finally {
+    releaseRead()
+    releaseEdit()
+    await moving
+  }
+  assert.deepEqual(updates, [jack])
+})
+
+test('a file can move back out while the previous move is still refreshing unrelated folders', async (t) => {
+  const f = await fixture(t, { refreshInterval: 0 })
+  const file = f.file('jack/a.md')
+  f.file('jack/1231/keep.md')
+  f.file('other/keep.md')
+  f.config.resources = ['jack', 'other', 'jack/a.md']
+  const provider = f.views.get('favorites').treeDataProvider
+  await provider.refresh()
+  const [jack, other] = await provider.getChildren()
+  const [sub] = await provider.getChildren(jack)
+  await provider.getChildren(other)
+  let entered, release
+  const reading = new Promise((resolve) => { entered = resolve })
+  const gate = new Promise((resolve) => { release = resolve })
+  const read = f.vscode.workspace.fs.readDirectory
+  f.vscode.workspace.fs.readDirectory = async (uri) => {
+    if (uri.fsPath === other.resourceUri.fsPath) { entered(); await gate }
+    return read(uri)
+  }
+  const moved = Uri.joinPath(sub.resourceUri, 'a.md')
+  const transfer = new Map()
+  provider.handleDrag([f.item(file, true)], transfer, {})
+  const moveIn = provider.handleDrop(sub, transfer, {})
+  let moveOut
+  try {
+    await reading
+    let edited
+    const nextEdit = new Promise((resolve) => { edited = resolve })
+    const apply = f.vscode.workspace.applyEdit
+    f.vscode.workspace.applyEdit = async (edit) => {
+      const result = await apply(edit)
+      edited()
+      return result
+    }
+    moveOut = f.run('favorites.moveToParentFolder', f.item(moved, true))
+    await Promise.race([nextEdit, moveOut])
+    assert.equal(fs.existsSync(moved.fsPath), false)
+    assert.equal(fs.readFileSync(file.fsPath, 'utf8'), 'jack/a.md')
+  } finally {
+    release()
+    await Promise.all([moveIn, moveOut])
+  }
+  assert.deepEqual(f.config.resources, ['jack', 'other', 'jack/a.md'])
+})

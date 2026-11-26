@@ -64,6 +64,21 @@ test('refresh interval can be changed or disabled without leaving duplicate time
   assert.equal(f.timers.size, 0)
 })
 
+test('periodic refresh publishes no tree update when files and markers do not change', async (t) => {
+  const f = await fixture(t)
+  f.file('jack/existing.md')
+  f.config.resources = ['jack']
+  await f.tick()
+  const provider = f.views.get('favorites').treeDataProvider
+  const [jack] = await provider.getChildren()
+  await provider.getChildren(jack)
+  const updates = []
+  provider.onDidChangeTreeData((value) => updates.push(value))
+  await f.tick()
+  await f.tick()
+  assert.deepEqual(updates, [])
+})
+
 test('a temporary root stat failure preserves NEW through recovery', async (t) => {
   const f = await fixture(t)
   f.file('jack/existing.md')
